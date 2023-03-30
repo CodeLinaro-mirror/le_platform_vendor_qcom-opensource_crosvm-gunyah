@@ -34,15 +34,20 @@ extern crate log;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::convert::TryInto;
+use std::convert::{TryInto, TryFrom};
 
 use log::{warn, debug};
 
 use devices::virtio::Interrupt;
-use base::{Event, Result};
+use base::{Event, Result, Tube};
 use devices::virtio::{Queue, VirtioDevice};
 use vm_memory::{GuestAddress, GuestMemory};
 use devices::IrqLevelEvent;
+
+use libc::ERANGE;
+use sync::Mutex;
+use devices::pci::MsixConfig;
+use devices::pci::PciId;
 
 const DEVICE_ACKNOWLEDGE: u32 = 0x01;
 const DEVICE_DRIVER: u32 = 0x02;
@@ -55,6 +60,7 @@ const VENDOR_ID: u32 = 0;
 
 const MMIO_MAGIC_VALUE: u32 = 0x74726976;
 const MMIO_VERSION: u32 = 2;
+const VIRTIO_PCI_VENDOR_ID: u16 = 0x1af4;
 
 /// Implements the
 /// [MMIO](http://docs.oasis-open.org/virtio/virtio/v1.0/cs04/virtio-v1.0-cs04.html#x1-1090002)
@@ -83,6 +89,7 @@ pub struct MmioDevice {
         queues: Vec<Queue>,
         queue_evts: Vec<Event>,
         mem: Option<GuestMemory>,
+        msix_config: Arc<Mutex<MsixConfig>>,
 }
 
 impl MmioDevice {
@@ -105,6 +112,17 @@ impl MmioDevice {
                         .map(|&s| Queue::new(s))
                         .collect();
 
+            let pci_device_id = device.device_type() as u16;
+            let num_interrupts = device.num_interrupts();
+            let msix_num = u16::try_from(num_interrupts + 0).map_err(|_| base::Error::new(ERANGE))?;
+            let (_, device_tube) = Tube::pair().expect("failed to create mmio device tube");
+            let msix_config = Arc::new(Mutex::new(MsixConfig::new(
+                        msix_num,
+                        device_tube,
+                        PciId::new(VIRTIO_PCI_VENDOR_ID, pci_device_id).into(),
+                        device.debug_label(),
+                        )));
+
             Ok(MmioDevice {
                         device,
                         device_activated: false,
@@ -118,6 +136,7 @@ impl MmioDevice {
                         queues,
                         queue_evts,
                         mem: Some(mem),
+                        msix_config,
             })
         }
 
@@ -268,12 +287,12 @@ impl MmioDevice {
                 let mem = self.mem.clone().unwrap();
 		self.device.on_device_sandboxed();
 
-		let mut interrupt = Interrupt::new(
-				    self.interrupt_status.clone(),
-				    interrupt_evt.try_clone().unwrap(),
-				    None,
-				    VIRTIO_MSI_NO_VECTOR,
-				    );
+        let mut interrupt = Interrupt::new(
+                self.interrupt_status.clone(),
+                interrupt_evt.try_clone().unwrap(),
+                Some(self.msix_config.clone()),
+                VIRTIO_MSI_NO_VECTOR,
+        );
 		Interrupt::set_skip_check(&mut interrupt);
 
 		self.device.activate(mem, interrupt, self.queues.clone(), self.queue_evts.split_off(0));

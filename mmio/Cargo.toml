@@ -16,5 +16,6 @@ path = "src/lib.rs"
 base = { path = "../../../../../external/crosvm/base" }
 devices = { path = "../../../../../external/crosvm/devices" }
 log = "*"
+libc = "*"
 sync = { path = "../../../../../external/crosvm/common/sync" }
 vm_memory = { path = "../../../../../external/crosvm/vm_memory" }

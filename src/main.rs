@@ -30,14 +30,18 @@ use hypervisor::{ProtectionType};
 use mmio::MmioDevice;
 
 use base::{pagesize, AsRawDescriptor};
+use base::{info, error, Event, RawDescriptor};
 use vm_memory::{GuestAddress, GuestMemory, GuestMemoryError, MemoryRegion};
 use std::sync::Arc;
 use std::convert::TryInto;
 
 use devices::virtio::block::block::DiskOption;
+use devices::virtio::vhost::user::vmm::{
+ Hab as VhostUserHab
+};
 
 use crosvm::{
-    argument::{self, set_arguments, Argument},
+    argument::{self, set_arguments, Argument},VhostUserOption,
 };
 use base::{FlockOperation, validate_raw_fd, flock};
 use base::{ioctl_with_val, ioctl_io_nr, ioctl_with_ref, ioctl_with_mut_ref, ioctl_iow_nr, ioctl_ior_nr, ioctl_iowr_nr, SafeDescriptor, FromRawDescriptor};
@@ -133,6 +137,30 @@ pub struct VirtioNet {
     config_space: Option<Vec<u32>>,
 }
 
+struct VirtioHab {
+    label: u32,
+    hab_deviceId : u32,
+    no_of_queues : u32,
+    mmio: Option<MmioDevice>,
+    config_space: Option<Vec<u32>>,
+    vhost_user_hab: VhostUserOption,
+}
+
+impl VirtioHab {
+    pub fn new() -> Self {
+        Self {
+            label: 0,
+            hab_deviceId : 0,
+            no_of_queues : 0,
+            mmio: None,
+            config_space: Some(Vec::new()),
+            vhost_user_hab: VhostUserOption {
+                socket: PathBuf::new()
+            },
+        }
+    }
+}
+
 struct Vcpu {
 	id: u8,
 	raw_fd: i32,
@@ -160,6 +188,7 @@ struct BackendConfig {
     vhost_net_device_path: PathBuf,
     vhost_net: bool,
     log_type: Option<String>,
+    vhosthab: Vec<VirtioHab>,
 }
 
 impl Default for BackendConfig {
@@ -170,10 +199,10 @@ impl Default for BackendConfig {
             vm: None,
             mem: None,
             sfd: None,
-	    vm_sfd: None,
-	    vcpus: Vec::new(),
-	    vcpu_count: 1,
-	    driver_variant: 2,
+            vm_sfd: None,
+            vcpus: Vec::new(),
+            vcpu_count: 1,
+            driver_variant: 2,
             sandbox: false,
             log_level: log::LevelFilter::Info,
             network_dev: false,
@@ -184,6 +213,7 @@ impl Default for BackendConfig {
             vhost_net_device_path: PathBuf::from(VHOST_NET_PATH),
             vhost_net: true,
             log_type: Some("ftrace".to_string()),
+            vhosthab: Vec::new(),
         }
     }
 }
@@ -580,6 +610,62 @@ fn create_block_devices(cfg: &mut BackendConfig) -> std::result::Result<(), Back
     Ok(())
 }
 
+fn create_vhab_devices(cfg: &mut BackendConfig) -> std::result::Result<(), BackendError> {
+    for hab in &mut cfg.vhosthab {
+        let mem = cfg.mem.as_ref().expect(&format!("{}:{}", file!(), line!()));
+        let sfd :&SafeDescriptor;
+        let q_size :Option<u16>;
+        match cfg.driver_variant {
+            1 => {sfd = cfg.sfd.as_ref().expect(&format!("{}:{}", file!(), line!())); q_size = Some(256)}
+            2 => {sfd = cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!())); q_size = Some(128)}
+            _ => return Err(BackendError::StrError(String::from("Unsupported driver variant.")))
+        };
+
+        let habdev =  VhostUserHab::new(virtio::base_features(ProtectionType::Unprotected), &hab.vhost_user_hab.socket, hab.hab_deviceId,  hab.no_of_queues)
+            .map_err(|_| BackendError::StrError(String::from("vhost hab new failed")))?;
+
+        hab.mmio = Some(MmioDevice::new(mem.clone(), Box::new(habdev)).expect(&format!("{}:{}", file!(), line!())));
+        let mut idx = 0;
+        let mmio = hab.mmio.as_ref().expect(&format!("{}:{}", file!(), line!()));
+        for e in mmio.queue_evts() {
+            let event_fd = VirtioEventfd {
+                _label : hab.label,
+                _flags : ASSIGN_EVENTFD,
+                _queue_num : idx,
+                _fd : e.as_raw_descriptor(),
+            };
+
+            idx = idx + 1;
+            let ret = unsafe { ioctl_with_ref(sfd, to_cmd(VmIoctl::IoEventFd, cfg.driver_variant)
+                .expect(&format!("{}:{}", file!(), line!())), &event_fd) };
+            if ret < 0 {
+                return Err(BackendError::StrNumError {
+                err: String::from("ioeventfd ioctl failed"),
+                val: io::Error::last_os_error(),
+                });
+            }
+        }
+
+        let irq_fd = VirtioIrqfd {
+            _label: hab.label,
+            _fd : mmio.interrupt_evt().expect(&format!("{}:{}", file!(), line!())).as_raw_descriptor(),
+            _flags: VBE_ASSIGN_IRQFD,
+            _reserved: 0,
+        };
+
+        let ret = unsafe { ioctl_with_ref(sfd, to_cmd(VmIoctl::IrqFd, cfg.driver_variant)
+                                          .expect(&format!("{}:{}", file!(), line!())), &irq_fd) };
+        if ret < 0 {
+            return Err(BackendError::StrNumError {
+                err: String::from("irqfd ioctl failed"),
+                val: io::Error::last_os_error(),
+            });
+        }
+    }
+
+    Ok(())
+}
+
 fn handle_driver_ok(label: u32, sfd: &SafeDescriptor, mmio: &mut MmioDevice, cspace: &mut Vec<u32>, driver_variant: u8) {
     let mut cdata = VirtioConfigData {
         _label: label,
@@ -960,6 +1046,30 @@ fn run_backend_v2(cfg: &mut BackendConfig) -> std::result::Result<(), ()>
 		}
     }
 
+	let mut hab_thread_handles = Vec::new();
+        if !cfg.vhosthab.is_empty() {
+		let e = create_vhab_devices(cfg);
+		if let Err(_e) = e {
+			error!("{}", _e);
+			panic!("{}", _e);
+		}
+
+		for vhab in &mut cfg.vhosthab {
+			let label = vhab.label;
+			let mut sfd = cfg.vm_sfd.as_mut().expect(&format!("{}:{}", file!(), line!())).try_clone()
+			              .expect(&format!("{}:{}", file!(), line!()));
+			let mut mmio = vhab.mmio.take().expect(&format!("{}:{}", file!(), line!()));
+			let mut cspace = vhab.config_space.take().expect(&format!("{}:{}", file!(), line!()));
+			let driver_variant = cfg.driver_variant;
+			init_config_space(&mut cspace, label, &mut mmio, &mut sfd, driver_variant);
+
+			let handle = thread::spawn(move || {
+					handle_events(label, sfd, &mut mmio, &mut cspace, driver_variant);
+					});
+			hab_thread_handles.push(handle);
+		}
+    }
+
 	let e = create_vcpus(cfg);
 	if let Err(_e) = e {
 		error!("{}", _e);
@@ -974,19 +1084,25 @@ fn run_backend_v2(cfg: &mut BackendConfig) -> std::result::Result<(), ()>
 	for vcpu in &mut cfg.vcpus {
 		let _ret = vcpu.thread_handle.take().expect(&format!("{}:{}", file!(), line!())).join();
 	}
-	if !cfg.vdisks.is_empty() {
-		for handle in blk_thread_handles {
-			let _ret = handle.join();
-		}
-	}
+    if !cfg.vdisks.is_empty() {
+        for handle in blk_thread_handles {
+            let _ret = handle.join();
+        }
+    }
 
-	if !cfg.vnet.is_empty() {
-		for handle in net_thread_handles {
-			let _ret = handle.join();
-		}
-	}
+    if !cfg.vnet.is_empty() {
+        for handle in net_thread_handles {
+            let _ret = handle.join();
+        }
+    }
 
-	Ok(())
+    if !cfg.vhosthab.is_empty() {
+        for handle in hab_thread_handles {
+            let _ret = handle.join();
+        }
+    }
+
+    Ok(())
 }
 
 fn run_backend_v1(cfg: &mut BackendConfig) -> std::result::Result<(), ()>
@@ -1321,7 +1437,7 @@ fn set_argument(cfg: &mut BackendConfig, name: &str, value: Option<&str>) -> arg
 		cfg.vdisks.push(vdisk);
 	}
 
-	"vm" => {
+    "vm" => {
 		cfg.vm = Some(value.expect(&format!("{}:{}", file!(), line!())).to_owned());
 		//PID would be required for log analysis of all log levels. Hence error!().
 		error!("{}", format!("qcrosvm PID for {}: {}", cfg.vm.as_ref()
@@ -1332,7 +1448,7 @@ fn set_argument(cfg: &mut BackendConfig, name: &str, value: Option<&str>) -> arg
                 cfg.sandbox = true;
 	}
 
-        "log" => {
+    "log" => {
 		let param = value.expect(&format!("{}:{}", file!(), line!()));
 		let components = param.split(',');
 
@@ -1497,6 +1613,75 @@ fn set_argument(cfg: &mut BackendConfig, name: &str, value: Option<&str>) -> arg
 		cfg.vnet.push(vnet_dev);
 	}
 
+    "vhost-user-hab" => {
+        let param = value.unwrap();
+        let mut components = param.split(',');
+
+        let mut vhab = VirtioHab::new();
+        vhab.vhost_user_hab = VhostUserOption {
+                socket: PathBuf::from(
+                            components
+                            .next()
+                            .ok_or_else(|| argument::Error::InvalidValue {
+                                value: param.to_owned(),
+                                expected: String::from("missing vhost hab sock path"),
+                            })?,
+                            ),
+            };
+
+        for opt in components {
+            let mut o = opt.splitn(2, '=');
+            let kind = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                value: opt.to_owned(),
+                expected: String::from("vhost HAB options must not be empty"),
+            })?;
+
+            let value = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                value: opt.to_owned(),
+                expected: String::from("vhost HAB options must be of the form `kind=value`"),
+            })?;
+
+            match kind {
+                "label" => {
+                    let label: u32 = u32::from_str_radix(value, 16)
+                        .map_err(|_| argument::Error::InvalidValue {
+                            value: value.to_owned(),
+                            expected: String::from("`label` must be an unsigned integer"),
+                        })?;
+                    if label == 0 {
+                        return Err(argument::Error::InvalidValue {
+                            value: value.to_owned(),
+                            expected: String::from("`label` must be a non zero integer"),
+                        });
+
+                    }
+                    vhab.label = label;
+                }
+
+                "device-id" => {
+                    vhab.hab_deviceId = value.parse().map_err(|_| argument::Error::InvalidValue {
+                        value: value.to_owned(),
+                        expected: String::from(" device-id must be an integer"),
+                    })?;
+                }
+
+                "queue-num" => {
+                    vhab.no_of_queues = value.parse().map_err(|_| argument::Error::InvalidValue {
+                        value: value.to_owned(),
+                        expected: String::from("queue number must be an integer "),
+                    })?;
+                }
+
+                _ => {
+                    return Err(argument::Error::InvalidValue {
+                        value: kind.to_owned(),
+                        expected: String::from("supported vhost hab options only"),
+                    });
+                }
+            }
+        }
+        cfg.vhosthab.push(vhab);
+    }
 	_ => unreachable!(),
 
 	}
@@ -1526,6 +1711,7 @@ fn parse_and_run(args: std::env::Args) -> std::result::Result<(), ()> {
 			ip_addr=IP - IP address to assign to host tap interface
 			netmask=NETMASK - Netmask for VM subnet
 			mac=MAC - MAC address for VM"),
+			Argument::value("vhost-user-hab", "SOCKET_PATH", "label=LABEL[,key=value[,...]],device-id= device id  , queue-num = Number of queues"),
 		];
 	let mut cfg = BackendConfig::default();
 	let match_res = set_arguments(args, &arguments[..], |name, value| {
