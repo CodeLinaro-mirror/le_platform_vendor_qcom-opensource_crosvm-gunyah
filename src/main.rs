@@ -897,13 +897,22 @@ fn read_banked_reg(mmio: &mut MmioDevice, sel: u32, offset_write: u64, offset_re
 fn init_config_space(config_space: &mut Vec<u32>, label: u32, mmio: &mut MmioDevice, sfd: &mut SafeDescriptor, driver_variant: u8) {
 	let mut val: [u8; 4] = [0; 4];
 	let mut reg: u32;
-	let mut offset: u32 = 0;
+	let mut offset: usize = 0;
 	let mut ret;
+	// device config start from 0x100 to 0xfff, so the length is 0xf00(3840)
+	let mut device_config: [u8; 3840] = [0; 3840];
 
-	while offset < 4096 {
+	while offset < 256 {
 		mmio.read(offset as u64, &mut val);
 		reg = u32::from_le_bytes(val);
-
+		config_space.push(reg);
+		offset += 4;
+	}
+	mmio.read(offset as u64, &mut device_config);
+	offset = 0;
+	while offset < 3840 {
+		val = device_config[offset..offset + 4].try_into().unwrap();
+		reg = u32::from_le_bytes(val);
 		config_space.push(reg);
 		offset += 4;
 	}

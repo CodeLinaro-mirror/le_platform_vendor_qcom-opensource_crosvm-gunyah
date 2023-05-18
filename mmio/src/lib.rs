@@ -77,7 +77,7 @@ const VIRTIO_PCI_VENDOR_ID: u16 = 0x1af4;
 /// Typically one page (4096 bytes) of MMIO address space is sufficient to handle this transport
 /// and inner virtio device.
 pub struct MmioDevice {
-        device: Box<dyn VirtioDevice>,
+        pub device: Box<dyn VirtioDevice>,
         device_activated: bool,
         features_select: u32,
         acked_features_select: u32,
