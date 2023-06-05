@@ -1800,50 +1800,55 @@ fn set_argument(cfg: &mut BackendConfig, name: &str, value: Option<&str>) -> arg
             })?
         );
 
-        let mut vinput = VirtioInput {
-            dev_path: input_dev_path,
-            label: 0,
-            mmio: None,
-            config_space: Some(Vec::new()),
-        };
+        let path = Path::new(&input_dev_path);
+        if path.exists() {
+            let mut vinput = VirtioInput {
+                dev_path: input_dev_path,
+                label: 0,
+                mmio: None,
+                config_space: Some(Vec::new()),
+            };
 
-        for opt in components {
-            let mut o = opt.splitn(2, '=');
-            let kind = o.next().ok_or_else(|| argument::Error::InvalidValue {
-                value: opt.to_owned(),
-                expected: String::from("input options must not be empty"),
-            })?;
+            for opt in components {
+                let mut o = opt.splitn(2, '=');
+                let kind = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                    value: opt.to_owned(),
+                    expected: String::from("input options must not be empty"),
+                })?;
 
-            let value = o.next().ok_or_else(|| argument::Error::InvalidValue {
-                value: opt.to_owned(),
-                expected: String::from("input options must be of the form `kind=value`"),
-            })?;
-            match kind {
-                "label" => {
-                    let label: u32 = u32::from_str_radix(value, 16)
-                        .map_err(|_| argument::Error::InvalidValue {
-                            value: value.to_owned(),
-                            expected: String::from("`label` must be an unsigned integer"),
-                    })?;
-                    if label == 0 {
+                let value = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                    value: opt.to_owned(),
+                    expected: String::from("input options must be of the form `kind=value`"),
+                })?;
+                match kind {
+                    "label" => {
+                        let label: u32 = u32::from_str_radix(value, 16)
+                            .map_err(|_| argument::Error::InvalidValue {
+                                value: value.to_owned(),
+                                expected: String::from("`label` must be an unsigned integer"),
+                        })?;
+                        if label == 0 {
+                            return Err(argument::Error::InvalidValue {
+                                value: value.to_owned(),
+                                expected: String::from("`label` must be a non zero integer"),
+                            });
+                        }
+                        vinput.label = label;
+                    }
+
+                    _ => {
                         return Err(argument::Error::InvalidValue {
-                            value: value.to_owned(),
-                            expected: String::from("`label` must be a non zero integer"),
+                            value: kind.to_owned(),
+                            expected: String::from("supported input options only"),
                         });
                     }
-                    vinput.label = label;
-                }
-
-                _ => {
-                    return Err(argument::Error::InvalidValue {
-                        value: kind.to_owned(),
-                        expected: String::from("supported input options only"),
-                    });
                 }
             }
-        }
 
-        cfg.vinputs.push(vinput);
+            cfg.vinputs.push(vinput);
+        } else {
+            println!("Warning: The input device path does not exist.");
+        }
     }
 
 	_ => unreachable!(),
