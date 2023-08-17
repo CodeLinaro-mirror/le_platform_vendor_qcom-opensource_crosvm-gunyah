@@ -123,6 +123,7 @@ pub struct NetOption{
     mac_addr: MacAddress,
     vq_pairs: u16,
     read_only: bool,
+    vm_name_for_net: Option<String>,
 }
 
 struct VirtioDisk {
@@ -197,6 +198,7 @@ struct BackendConfig {
     log_type: Option<String>,
     vhosthab: Vec<VirtioHab>,
     vinputs: Vec<VirtioInput>,
+    vm_name_for_net: Option<String>,
 }
 
 impl Default for BackendConfig {
@@ -223,6 +225,7 @@ impl Default for BackendConfig {
             log_type: Some("ftrace".to_string()),
             vhosthab: Vec::new(),
             vinputs: Vec::new(),
+            vm_name_for_net: None,
         }
     }
 }
@@ -441,6 +444,7 @@ fn raw_fd_from_path(path: &Path) -> std::result::Result<RawFd, ()> {
 
 fn create_net_devices(cfg: &mut BackendConfig) -> std::result::Result<(), BackendError> {
 
+    let mut name : &[u8] = b"vmtap%d";
     if cfg.ip_addr.is_some() || cfg.netmask.is_some() || cfg.mac_addr.is_some() {
 
            if cfg.ip_addr.is_none() {
@@ -463,16 +467,34 @@ fn create_net_devices(cfg: &mut BackendConfig) -> std::result::Result<(), Backen
 			2 => {sfd = cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!())); q_size = Some(128)}
 			_ => return Err(BackendError::StrError(String::from("Unsupported driver variant.")))
 		};
-
 	if let (Some(ip_addr), Some(netmask), Some(mac_addr)) = (cfg.ip_addr, cfg.netmask, cfg.mac_addr) {
 		if cfg.vhost_net {
-			let ndev = virtio::vhost::Net::<Tap, vhost::Net<Tap>>::new(
+                          let mut ndev;
+                          if cfg.vm_name_for_net.is_some() {
+                                let vmname_string: &String = &cfg.vm.as_ref().unwrap();
+                                let str_name = b"vmtap-";
+                                let name  = &[str_name,vmname_string.as_bytes()].concat();
+
+                           ndev = virtio::vhost::Net::<Tap, vhost::Net<Tap>>::new_with_name(
+				&cfg.vhost_net_device_path,
+				base_features(ProtectionType::Unprotected),
+				ip_addr,
+				netmask,
+				mac_addr,
+                                name,
+				).map_err(|_| BackendError::StrError(String::from("new with name failed failed")))?;
+                          }
+                          else
+                          {
+
+                             ndev = virtio::vhost::Net::<Tap, vhost::Net<Tap>>::new(
 				&cfg.vhost_net_device_path,
 				base_features(ProtectionType::Unprotected),
 				ip_addr,
 				netmask,
 				mac_addr,
 				).map_err(|_| BackendError::StrError(String::from("vhost_net_new failed")))?;
+                          }
 
 			vnet.mmio = Some(MmioDevice::new(mem.clone(), Box::new(ndev)).expect(&format!("{}:{}", file!(), line!())));
 			let mut idx = 0;
@@ -897,13 +919,22 @@ fn read_banked_reg(mmio: &mut MmioDevice, sel: u32, offset_write: u64, offset_re
 fn init_config_space(config_space: &mut Vec<u32>, label: u32, mmio: &mut MmioDevice, sfd: &mut SafeDescriptor, driver_variant: u8) {
 	let mut val: [u8; 4] = [0; 4];
 	let mut reg: u32;
-	let mut offset: u32 = 0;
+	let mut offset: usize = 0;
 	let mut ret;
+	// device config start from 0x100 to 0xfff, so the length is 0xf00(3840)
+	let mut device_config: [u8; 3840] = [0; 3840];
 
-	while offset < 4096 {
+	while offset < 256 {
 		mmio.read(offset as u64, &mut val);
 		reg = u32::from_le_bytes(val);
-
+		config_space.push(reg);
+		offset += 4;
+	}
+	mmio.read(offset as u64, &mut device_config);
+	offset = 0;
+	while offset < 3840 {
+		val = device_config[offset..offset + 4].try_into().unwrap();
+		reg = u32::from_le_bytes(val);
 		config_space.push(reg);
 		offset += 4;
 	}
@@ -1704,6 +1735,25 @@ fn set_argument(cfg: &mut BackendConfig, name: &str, value: Option<&str>) -> arg
 									})?,
 							);
 					}
+                                  "vm_name" => {
+                                               if cfg.vm_name_for_net.is_some() {
+				return Err(argument::Error::TooManyArguments(
+								"`vm_name` already given".to_owned(),
+							));
+						}
+                                                cfg.vm_name_for_net =
+							Some(
+								value
+									.parse()
+									.map_err(|_| argument::Error::InvalidValue {
+										value: value.to_owned(),
+										expected: String::from(
+											"vm_name expected",
+										),
+									})?,
+							);
+					}
+
 
 				_ => {
 					return Err(argument::Error::InvalidValue {
@@ -1874,12 +1924,13 @@ fn parse_and_run(args: std::env::Args) -> std::result::Result<(), ()> {
 			Argument::short_value('v', "vm", "VMNAME", "Virtual Machine Name"),
 			Argument::short_flag('s', "sandbox", "Sandbox using minijail (default: disabled."),
 
-			Argument::short_value('n',"net","label=LABEL[,key=value[,key=value[,...]]]","net device followed by comma-separated options.
+			Argument::short_value('n',"net","label=LABEL[,key=value[,key=value[,key=value[,...]]]]","net device followed by comma-separated options.
             Valid keys:
 			label=LABEL - Indicates the label associated with the virtual net dev
 			ip_addr=IP - IP address to assign to host tap interface
 			netmask=NETMASK - Netmask for VM subnet
-			mac=MAC - MAC address for VM"),
+			mac=MAC - MAC address for VM,
+            vm_name=VM - Indicates VM name is provided for network configuration"),
 			Argument::value("vhost-user-hab", "SOCKET_PATH", "label=LABEL[,key=value[,...]],device-id= device id  , queue-num = Number of queues"),
 			Argument::short_value('i', "input", "PATH,label=LABEL[,key=value[,key=value[,...]]", "Path to a input device followed by comma-separated option label=LABEL."),
 		];
