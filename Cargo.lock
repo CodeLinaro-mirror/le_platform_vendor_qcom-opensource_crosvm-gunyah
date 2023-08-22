@@ -836,6 +836,7 @@ version = "0.1.0"
 dependencies = [
  "base",
  "devices",
+ "libc",
  "log",
  "sync",
  "vm_memory",
