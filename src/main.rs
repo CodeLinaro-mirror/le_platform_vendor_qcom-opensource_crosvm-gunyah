@@ -126,7 +126,7 @@ pub struct NetOption{
     mac_addr: MacAddress,
     vq_pairs: u16,
     read_only: bool,
-    vm_name_for_net: Option<String>,
+    tap_name: Option<String>,
 }
 
 struct VirtioDisk {
@@ -209,7 +209,7 @@ struct BackendConfig {
     log_type: Option<String>,
     vhosthab: Vec<VirtioHab>,
     vinputs: Vec<VirtioInput>,
-    vm_name_for_net: Option<String>,
+    tap_name: Option<String>,
 }
 
 impl Default for BackendConfig {
@@ -242,7 +242,7 @@ impl Default for BackendConfig {
             log_type: Some("ftrace".to_string()),
             vhosthab: Vec::new(),
             vinputs: Vec::new(),
-            vm_name_for_net: None,
+            tap_name : None,
         }
     }
 }
@@ -487,8 +487,8 @@ fn create_net_devices(cfg: &mut BackendConfig) -> std::result::Result<(), Backen
 	if let (Some(ip_addr), Some(netmask), Some(mac_addr)) = (cfg.ip_addr, cfg.netmask, cfg.mac_addr) {
 		if cfg.vhost_net {
                           let mut ndev;
-                          if cfg.vm_name_for_net.is_some() {
-                                let vmname_string: &String = &cfg.vm.as_ref().unwrap();
+                          if cfg.tap_name.is_some() {
+                                let vmname_string: &String = &cfg.tap_name.as_ref().unwrap();
                                 let str_name = b"vmtap-";
                                 let name  = &[str_name,vmname_string.as_bytes()].concat();
 
@@ -1887,13 +1887,13 @@ fn set_argument(cfg: &mut BackendConfig, name: &str, value: Option<&str>) -> arg
 									})?,
 							);
 					}
-                                  "vm_name" => {
-                                               if cfg.vm_name_for_net.is_some() {
+                                  "tapName" => {
+                                               if cfg.tap_name.is_some() {
 				return Err(argument::Error::TooManyArguments(
 								"`vm_name` already given".to_owned(),
 							));
 						}
-                                                cfg.vm_name_for_net =
+                                                cfg.tap_name =
 							Some(
 								value
 									.parse()
@@ -2085,7 +2085,7 @@ fn parse_and_run(args: std::env::Args) -> std::result::Result<(), ()> {
 			ip_addr=IP - IP address to assign to host tap interface
 			netmask=NETMASK - Netmask for VM subnet
 			mac=MAC - MAC address for VM,
-            vm_name=VM - Indicates VM name is provided for network configuration"),
+            tapName=TAP - Indicates VM name is provided for network configuration"),
 			Argument::value("vhost-user-hab", "SOCKET_PATH", "label=LABEL[,key=value[,...]],device-id= device id  , queue-num = Number of queues"),
 			Argument::short_value('i', "input", "PATH,label=LABEL[,key=value[,key=value[,...]]", "Path to a input device followed by comma-separated option label=LABEL."),
 		];
