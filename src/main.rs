@@ -414,7 +414,7 @@ fn to_cmd(ioc: VmIoctl, version: u8) -> std::result::Result<u64, BackendError> {
 }
 
 fn print_usage() {
-    println!("qcrosvm [-l] [-s] [-c | --scmi=true,label=LABEL] [--disk=IMAGE_FILE,label=LABEL[,rw=[true|false],sparse=[true|false],block_size=BYTES]] --vm=VMNAME");
+    println!("qcrosvm [-l] [-s] [-c | --scmi=true,label=LABEL] [-d | --disk=IMAGE_FILE,label=LABEL[,rw=[true|false],sparse=[true|false],block_size=BYTES]] [-n | --net=true,label=LABEL,ip_addr=IP_ADDR,netmask=NETMASK,mac=MAC,tapname=TAP] [-i | --input=PATH,label=LABEL] [---vhost-user-hab SOCKET_PATH,device_id=DEVICE_ID,queue-num=QUEUE_NUM,label=LABEL] --vm=VMNAME");
     println!("\n[-l] or [--log=[level=trace|debug|info|warn|error],[type=ftrace|logcat|term]]");
     println!("Default logger level: info");
     println!("Default logger type: ftrace");
