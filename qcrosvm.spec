@@ -5,6 +5,8 @@ Release: R1
 Source0:	 %{name}-%{version}.tar.gz
 BuildRequires:	make libtool gcc-g++ systemd-rpm-macros cargo libcap-devel rust
 BuildRequires:  rust-packaging
+%{?systemd_requires}
+Requires: systemd
 
 License: BSD-3-Clause-Clear & BSD-3-Clause
 
@@ -27,8 +29,20 @@ ln -sf %{_builddir}/vendor/qcom/opensource/qcrosvm %{_builddir}/qcrosvm
 %cargo_build -a
 
 %install
-mkdir -p %{buildroot}/%{_bindir}
-install -m 0755 -t  %{buildroot}/%{_bindir} %{_builddir}/vendor/qcom/opensource/qcrosvm/target/release/%{name}
+mkdir -p %{buildroot}%{_bindir}
+mkdir -p %{buildroot}%{_unitdir}
+install -m 0755 -t  %{buildroot}%{_bindir} %{_builddir}/vendor/qcom/opensource/qcrosvm/target/release/%{name}
+install -DpZm 0644 qcrosvm.service %{buildroot}%{_unitdir}
+
+%post
+systemctl enable qcrosvm.service
+
+%preun
+%systemd_preun qcrosvm.service
+
+%postun
+%systemd_postun_with_restart qcrosvm.service
 
 %files
 %{_bindir}/qcrosvm
+%{_unitdir}/qcrosvm.service
