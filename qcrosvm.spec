@@ -4,7 +4,6 @@ Version: 1.0
 Release: R1
 Source0:	 %{name}-%{version}.tar.gz
 BuildRequires:	make libtool gcc-g++ systemd-rpm-macros cargo libcap-devel rust
-BuildRequires:  rust-packaging
 %{?systemd_requires}
 Requires: systemd
 
@@ -26,7 +25,7 @@ mv %{_builddir}/minijail %{_builddir}/external/
 ln -sf %{_builddir}/vendor/qcom/opensource/qcrosvm %{_builddir}/qcrosvm
 
 %build
-%cargo_build -a
+/usr/bin/env CARGO_HOME=.cargo RUSTC_BOOTSTRAP=1 'RUSTFLAGS=-Copt-level=3 -Cdebuginfo=2 -Ccodegen-units=1 -Cstrip=none -Clink-arg=-Wl,-z,relro -Clink-arg=-Wl,-z,now --cap-lints=warn' /usr/bin/cargo build -j128 -Z avoid-dev-deps --release --all-features
 
 %install
 mkdir -p %{buildroot}%{_bindir}
