@@ -40,7 +40,7 @@ use std::convert::TryInto;
 
 use devices::virtio::block::block::DiskOption;
 use devices::virtio::vhost::user::vmm::{
-    Hab as VhostUserHab
+    Hab as VhostUserHab, Scmi as VhostUserScmi
 };
 
 use crosvm::{
@@ -182,6 +182,14 @@ struct VirtioConsole {
     config_space: Option<Vec<u32>>,
 }
 
+struct VuVirtioScmi {
+    enable: bool,
+    label: u32,
+    mmio: Option<MmioDevice>,
+    config_space: Option<Vec<u32>>,
+    vhost_user_scmi: VhostUserOption,
+}
+
 struct Vcpu {
     id: u8,
     raw_fd: i32,
@@ -217,6 +225,7 @@ struct BackendConfig {
     vhost_net_device_path: PathBuf,
     vhost_net: bool,
     log_type: Option<String>,
+    vuscmi: VuVirtioScmi,
     vhosthab: Vec<VirtioHab>,
     vinputs: Vec<VirtioInput>,
     tap_name: Option<String>,
@@ -262,6 +271,15 @@ impl Default for BackendConfig {
             vhost_net_device_path: PathBuf::from(VHOST_NET_PATH),
             vhost_net: true,
             log_type: Some("ftrace".to_string()),
+            vuscmi: VuVirtioScmi {
+                enable: false,
+                label: 0,
+                mmio: None,
+                config_space: None,
+                vhost_user_scmi: VhostUserOption {
+                    socket: PathBuf::new()
+                },
+            },
             vhosthab: Vec::new(),
             vinputs: Vec::new(),
             tap_name : None,
@@ -448,6 +466,7 @@ fn print_usage() {
     [-n | --net=true,label=LABEL,ip_addr=IP_ADDR,netmask=NETMASK,mac=MAC,tapname=TAP]
     [-i | --input=PATH,label=LABEL]
     [--vhost-user-hab SOCKET_PATH,device_id=DEVICE_ID,queue-num=QUEUE_NUM,label=LABEL]
+    [--vhost-user-scmi SOCKET_PATH,label=LABEL]
     [--console PATH,label=LABEL]
     --vm=VMNAME");
     println!("\n[-l] or [--log=[level=trace|debug|info|warn|error],[type=ftrace|logcat|term]]");
@@ -924,6 +943,60 @@ fn create_console_devices(cfg: &mut BackendConfig) -> std::result::Result<(), Ba
             val: io::Error::last_os_error(),
         });
     }
+    Ok(())
+}
+
+fn create_vuscmi_devices(cfg: &mut BackendConfig) -> std::result::Result<(), BackendError> {
+    let mem = cfg.mem.as_ref().expect(&format!("{}:{}", file!(), line!()));
+    let sfd :&SafeDescriptor;
+    let q_size :Option<u16>;
+    match cfg.driver_variant {
+        1 => {sfd = cfg.sfd.as_ref().expect(&format!("{}:{}", file!(), line!())); q_size = Some(256)}
+        2 => {sfd = cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!())); q_size = Some(128)}
+        _ => return Err(BackendError::StrError(String::from("Unsupported driver variant.")))
+    };
+
+    let vuscmidev =  VhostUserScmi::new(virtio::base_features(ProtectionType::Unprotected), &cfg.vuscmi.vhost_user_scmi.socket)
+                          .map_err(|_| BackendError::StrError(String::from("vhost scmi new failed")))?;
+
+    cfg.vuscmi.mmio = Some(MmioDevice::new(mem.clone(), Box::new(vuscmidev)).expect(&format!("{}:{}", file!(), line!())));
+    let mut idx = 0;
+    let mmio = cfg.vuscmi.mmio.as_ref().expect(&format!("{}:{}", file!(), line!()));
+    for e in mmio.queue_evts() {
+        let event_fd = VirtioEventfd {
+            _label : cfg.vuscmi.label,
+            _flags : ASSIGN_EVENTFD,
+            _queue_num : idx,
+            _fd : e.as_raw_descriptor(),
+        };
+
+        idx = idx + 1;
+        let ret = unsafe { ioctl_with_ref(sfd, to_cmd(VmIoctl::IoEventFd, cfg.driver_variant)
+                                                  .expect(&format!("{}:{}", file!(), line!())), &event_fd) };
+        if ret < 0 {
+            return Err(BackendError::StrNumError {
+                err: String::from("ioeventfd ioctl failed"),
+                val: io::Error::last_os_error(),
+                });
+            }
+        }
+
+        let irq_fd = VirtioIrqfd {
+            _label: cfg.vuscmi.label,
+            _fd : mmio.interrupt_evt().expect(&format!("{}:{}", file!(), line!())).as_raw_descriptor(),
+            _flags: VBE_ASSIGN_IRQFD,
+            _reserved: 0,
+        };
+
+        let ret = unsafe { ioctl_with_ref(sfd, to_cmd(VmIoctl::IrqFd, cfg.driver_variant)
+                               .expect(&format!("{}:{}", file!(), line!())), &irq_fd) };
+        if ret < 0 {
+            return Err(BackendError::StrNumError {
+                err: String::from("irqfd ioctl failed"),
+                val: io::Error::last_os_error(),
+            });
+        }
+
     Ok(())
 }
 
@@ -1409,6 +1482,28 @@ fn run_backend_v2(cfg: &mut BackendConfig) -> std::result::Result<(), ()>
         console_thread_handles.push(handle);
     }
 
+    let mut vuscmi_thread_handles = Vec::new();
+    if cfg.vuscmi.enable {
+        let e = create_vuscmi_devices(cfg);
+        if let Err(_e) = e {
+            error!("{}", _e);
+            panic!("{}", _e);
+        }
+
+        let label = cfg.vuscmi.label;
+        let mut sfd = cfg.vm_sfd.as_mut().expect(&format!("{}:{}", file!(), line!())).try_clone()
+                      .expect(&format!("{}:{}", file!(), line!()));
+        let mut mmio = cfg.vuscmi.mmio.take().expect(&format!("{}:{}", file!(), line!()));
+        let mut cspace = cfg.vuscmi.config_space.take().expect(&format!("{}:{}", file!(), line!()));
+        let driver_variant = cfg.driver_variant;
+        init_config_space(&mut cspace, label, &mut mmio, &mut sfd, driver_variant);
+
+        let handle = thread::spawn(move || {
+            handle_events(label, sfd, &mut mmio, &mut cspace, driver_variant);
+            });
+        vuscmi_thread_handles.push(handle);
+    }
+
     let e = create_vcpus(cfg);
     if let Err(_e) = e {
         error!("{}", _e);
@@ -1456,6 +1551,12 @@ fn run_backend_v2(cfg: &mut BackendConfig) -> std::result::Result<(), ()>
 
     if cfg.vconsole.enable {
         for handle in console_thread_handles {
+            let _ret = handle.join();
+        }
+    }
+
+    if cfg.vuscmi.enable {
+        for handle in vuscmi_thread_handles {
             let _ret = handle.join();
         }
     }
@@ -1915,6 +2016,66 @@ fn set_argument(cfg: &mut BackendConfig, name: &str, value: Option<&str>) -> arg
             };
         }
 
+        "vhost-user-scmi" => {
+            let mut vuscmi_label: u32 = 0;
+            let param = value.expect(&format!("{}:{}", file!(), line!()));
+            let mut components = param.split(',');
+            let vu = VhostUserOption {
+                        socket: PathBuf::from(
+                            components
+                            .next()
+                            .ok_or_else(|| argument::Error::InvalidValue {
+                                value: param.to_owned(),
+                                expected: String::from("missing vhost user scmi sock path"),
+                            })?,
+                            ),
+            };
+            for opt in components {
+                let mut o = opt.splitn(2, '=');
+                let kind = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                    value: opt.to_owned(),
+                    expected: String::from("vhost-user-scmi options must not be empty"),
+                })?;
+
+                let value = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                    value: opt.to_owned(),
+                    expected: String::from("vhost-user-scmi options must be of the form `kind=value`"),
+                })?;
+
+                match kind {
+                    "label" => {
+                        let label: u32 = u32::from_str_radix(value, 16)
+                            .map_err(|_| argument::Error::InvalidValue {
+                                value: value.to_owned(),
+                                expected: String::from("`label` must be an unsigned integer"),
+                            })?;
+                        if label == 0 {
+                            return Err(argument::Error::InvalidValue {
+                                value: value.to_owned(),
+                                expected: String::from("`label` must be a non zero integer"),
+                            });
+
+                        }
+                        vuscmi_label = label;
+                    }
+
+                    _ => {
+                        return Err(argument::Error::InvalidValue {
+                            value: kind.to_owned(),
+                            expected: String::from("vhost-user-scmi only supports label"),
+                        });
+                    }
+                }
+            }
+            cfg.vuscmi = VuVirtioScmi {
+                enable: true,
+                label: vuscmi_label,
+                mmio: None,
+                config_space: Some(Vec::new()),
+                vhost_user_scmi: vu,
+            };
+        }
+
         "net" => {
             let param = value.unwrap();
             let mut components = param.split(',');
@@ -2302,6 +2463,7 @@ fn parse_and_run(args: std::env::Args) -> std::result::Result<(), ()> {
                               Valid keys:
                               label=LABEL - Indicates the label associated with the scmi virtio device"),
 
+        Argument::value("vhost-user-scmi", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::short_value('n',"net","label=LABEL[,key=value[,key=value[,key=value[,...]]]]","net device followed by comma-separated options.
                               Valid keys:
                               label=LABEL - Indicates the label associated with the virtual net dev
