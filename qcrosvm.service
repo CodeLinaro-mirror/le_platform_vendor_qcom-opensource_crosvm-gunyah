@@ -6,8 +6,7 @@ Requires=vhost-user-disp.service vhost-user-gpu.service vhost-user-misc.service 
 After=multi-user.target vhost-user-disp.service vhost-user-gpu.service vhost-user-misc.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvm \
 --disk=/dev/disk/by-partlabel/la_super,label=17,rw=true \
