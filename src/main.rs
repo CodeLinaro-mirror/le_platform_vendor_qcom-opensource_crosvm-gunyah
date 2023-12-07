@@ -25,7 +25,8 @@ use simplelog::*;
 extern crate android_logger;
 use libc::{self, c_uint, c_int, c_char, open, O_RDWR, O_WRONLY};
 
-use devices::virtio::{self, base_features, Block, Console, Net, new_evdev};
+use devices::virtio::{self, base_features, Block, Console, Net};
+use devices::virtio::input::{constants::*, new_evdev};
 use devices::serial_device::{SerialHardware, SerialParameters, SerialType};
 use hypervisor::{ProtectionType};
 use mmio::MmioDevice;
@@ -842,7 +843,10 @@ fn create_vinput_devices(cfg: &mut BackendConfig) -> std::result::Result<(), Bac
                 val: io::Error::last_os_error(),
             })?;
 
-        let inputdev = virtio::new_evdev(dev_file, base_features(ProtectionType::Unprotected))
+        let mut input_features: u64 = virtio::base_features(ProtectionType::Unprotected);
+        // Indicates flat device config
+        input_features |= 1 << VIRTIO_INPUT_F_FLAT_CFG;
+        let inputdev = virtio::new_evdev(dev_file, input_features)
             .map_err(|_| BackendError::StrError(String::from("set up input device failed")))?;
 
         vinput.mmio = Some(MmioDevice::new(mem.clone(), Box::new(inputdev)).expect(&format!("{}:{}", file!(), line!())));
