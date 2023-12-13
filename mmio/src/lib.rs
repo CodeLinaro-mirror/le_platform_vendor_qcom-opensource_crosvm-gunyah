@@ -49,6 +49,7 @@ use sync::Mutex;
 use devices::pci::MsixConfig;
 use devices::pci::PciId;
 
+const DEVICE_RESET: u32 = 0x0;
 const DEVICE_ACKNOWLEDGE: u32 = 0x01;
 const DEVICE_DRIVER: u32 = 0x02;
 const DEVICE_DRIVER_OK: u32 = 0x04;
@@ -156,6 +157,10 @@ impl MmioDevice {
     fn is_driver_ready(&self) -> bool {
         let ready_bits = DEVICE_ACKNOWLEDGE | DEVICE_DRIVER | DEVICE_DRIVER_OK | DEVICE_FEATURES_OK;
         self.driver_status == ready_bits && self.driver_status & DEVICE_FAILED == 0
+    }
+
+    fn is_reset_requested(&self) -> bool {
+        self.driver_status == DEVICE_RESET
     }
 
     fn are_queues_valid(&self) -> bool {
@@ -298,6 +303,13 @@ impl MmioDevice {
             self.device.activate(mem, interrupt, self.queues.clone(), self.queue_evts.split_off(0));
             self.device_activated = true;
             debug!("{} activated!", self.debug_label());
+        }
+
+        if self.device_activated && self.is_reset_requested() {
+            self.device.reset();
+            self.device_activated = false;
+            self.queues.iter_mut().for_each(Queue::reset);
+            self.queue_select = 0;
         }
     }
 }
