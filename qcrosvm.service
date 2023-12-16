@@ -14,7 +14,7 @@ ExecStart=/usr/bin/qcrosvm \
 --disk=/dev/disk/by-partlabel/la_metadata,label=15,rw=true \
 --disk=/dev/disk/by-partlabel/la_persist,label=11,rw=true \
 --disk=/dev/disk/by-partlabel/la_misc,label=10,rw=true \
---net=true,label=13,ip_addr=192.168.1.13,netmask=255.255.255.0,mac=5A:6F:F0:05:7C:24 \
+--net=true,label=13,ip_addr=10.10.10.10,netmask=255.255.255.0,mac=5A:6F:F0:05:7C:24 \
 --vhost-user-hab "/tmp/linux-vm2-disp-skt",label=1A,device-id=93,queue-num=10 \
 --vhost-user-hab "/tmp/linux-vm2-ogles-skt",label=14,device-id=94,queue-num=2 \
 --vhost-user-hab "/tmp/linux-vm2-misc-skt",label=18,device-id=90,queue-num=2 \
