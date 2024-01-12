@@ -25,8 +25,8 @@ use simplelog::*;
 extern crate android_logger;
 use libc::{self, c_uint, c_int, c_char, open, O_RDWR, O_WRONLY};
 
-use devices::virtio::{self, base_features, Block, Console, Net};
 use devices::virtio::input::{constants::*, new_evdev};
+use devices::virtio::{self, base_features, Block, Console, Net};
 use devices::serial_device::{SerialHardware, SerialParameters, SerialType};
 use hypervisor::{ProtectionType};
 use mmio::MmioDevice;
@@ -40,7 +40,7 @@ use std::convert::TryInto;
 
 use devices::virtio::block::block::DiskOption;
 use devices::virtio::vhost::user::vmm::{
-    Hab as VhostUserHab
+    Hab as VhostUserHab, Scmi as VhostUserScmi
 };
 
 use crosvm::{
@@ -98,6 +98,8 @@ const VIRTIO_MMIO_QUEUE_USED_LOW: u64 = 0xa0;
 const VIRTIO_MMIO_QUEUE_USED_HIGH: u64 = 0xa4;
 const VIRTIO_MMIO_STATUS: u64 = 0x70;
 const VIRTIO_MMIO_STATUS_IDX: u64 = 28;
+const VIRTIO_MMIO_INPUT_SEL: u64 = 0x100;
+const VIRTIO_MMIO_DEVICE_CONFIG: u64 = 0x100;
 
 const GH_VCPU_MAX: u16 = 512;
 
@@ -182,6 +184,14 @@ struct VirtioConsole {
     config_space: Option<Vec<u32>>,
 }
 
+struct VuVirtioScmi {
+    enable: bool,
+    label: u32,
+    mmio: Option<MmioDevice>,
+    config_space: Option<Vec<u32>>,
+    vhost_user_scmi: VhostUserOption,
+}
+
 struct Vcpu {
     id: u8,
     raw_fd: i32,
@@ -217,6 +227,7 @@ struct BackendConfig {
     vhost_net_device_path: PathBuf,
     vhost_net: bool,
     log_type: Option<String>,
+    vuscmi: VuVirtioScmi,
     vhosthab: Vec<VirtioHab>,
     vinputs: Vec<VirtioInput>,
     tap_name: Option<String>,
@@ -262,6 +273,15 @@ impl Default for BackendConfig {
             vhost_net_device_path: PathBuf::from(VHOST_NET_PATH),
             vhost_net: true,
             log_type: Some("ftrace".to_string()),
+            vuscmi: VuVirtioScmi {
+                enable: false,
+                label: 0,
+                mmio: None,
+                config_space: None,
+                vhost_user_scmi: VhostUserOption {
+                    socket: PathBuf::new()
+                },
+            },
             vhosthab: Vec::new(),
             vinputs: Vec::new(),
             tap_name : None,
@@ -354,6 +374,26 @@ struct VirtioAckReset {
     _reserved: u32,
 }
 
+#[repr(C)]
+struct VirtioInputDeviceConfig {
+    _label: u32,
+    _device_id: u64,
+    _prop_bits: u32,
+    _num_ev_types: u8,
+    _num_abs_axes: u8,
+    _reserved: u32,
+}
+
+#[repr(C)]
+struct VirtioInputDeviceData {
+    _label: u32,
+    _sel: u8,
+    _subsel: u8,
+    _size: u8,
+    _reserved: [u8; 5],
+    _payload: [u8; 128],
+}
+
 /* system ioctls */
 ioctl_io_nr!(GH_CREATE_VM,          GH_IOCTL_TYPE_V2, 0x01);
 
@@ -377,6 +417,8 @@ ioctl_iowr_nr!(GET_DRIVER_FEATURES_V2,      GH_IOCTL_TYPE_V2, 0x6a, VirtioDriver
 ioctl_iowr_nr!(ACK_DRIVER_OK_V2,            GH_IOCTL_TYPE_V2, 0x6b, u32);
 ioctl_io_nr!(SET_APP_READY_V2,              GH_IOCTL_TYPE_V2, 0x6c);
 ioctl_iow_nr!(ACK_RESET_V2,                 GH_IOCTL_TYPE_V2, 0x6d, VirtioAckReset);
+ioctl_iow_nr!(SET_INPUT_DEVICE_CONFIG_V2,   GH_IOCTL_TYPE_V2, 0x6e, VirtioInputDeviceConfig);
+ioctl_iow_nr!(SET_INPUT_DEVICE_DATA_V2,     GH_IOCTL_TYPE_V2, 0x6f, VirtioInputDeviceData);
 
 /* virtio backend driver ioctls for backward compatibility */
 ioctl_ior_nr!(GET_SHARED_MEMORY_SIZE_V1,    GH_IOCTL_TYPE_V1, 1, u64);
@@ -407,7 +449,9 @@ enum VmIoctl {
     GetQueueInfo,
     GetDriverFeatures,
     AckDriverOk,
-    AckReset
+    AckReset,
+    SetInputDeviceConfig,
+    SetInputDeviceData
 }
 
 fn to_cmd(ioc: VmIoctl, version: u8) -> std::result::Result<u64, BackendError> {
@@ -424,6 +468,8 @@ fn to_cmd(ioc: VmIoctl, version: u8) -> std::result::Result<u64, BackendError> {
             VmIoctl::GetDriverFeatures => Ok(GET_DRIVER_FEATURES_V2()),
             VmIoctl::AckDriverOk => Ok(ACK_DRIVER_OK_V2()),
             VmIoctl::AckReset => Ok(ACK_RESET_V2()),
+            VmIoctl::SetInputDeviceConfig => Ok(SET_INPUT_DEVICE_CONFIG_V2()),
+            VmIoctl::SetInputDeviceData => Ok(SET_INPUT_DEVICE_DATA_V2()),
         }
         1 => match ioc {
             VmIoctl::IoEventFd => Ok(IOEVENTFD_V1()),
@@ -437,6 +483,7 @@ fn to_cmd(ioc: VmIoctl, version: u8) -> std::result::Result<u64, BackendError> {
             VmIoctl::GetDriverFeatures => Ok(GET_DRIVER_FEATURES_V1()),
             VmIoctl::AckDriverOk => Ok(ACK_DRIVER_OK_V1()),
             VmIoctl::AckReset => Ok(ACK_RESET_V1()),
+            _ => Err(BackendError::StrError(String::from("Unsupported cmd"))),
         }
         _ => Err(BackendError::StrError(String::from("Unsupported driver variant."))),
     }
@@ -448,6 +495,7 @@ fn print_usage() {
     [-n | --net=true,label=LABEL,ip_addr=IP_ADDR,netmask=NETMASK,mac=MAC,tapname=TAP]
     [-i | --input=PATH,label=LABEL]
     [--vhost-user-hab SOCKET_PATH,device_id=DEVICE_ID,queue-num=QUEUE_NUM,label=LABEL]
+    [--vhost-user-scmi SOCKET_PATH,label=LABEL]
     [--console PATH,label=LABEL]
     --vm=VMNAME");
     println!("\n[-l] or [--log=[level=trace|debug|info|warn|error],[type=ftrace|logcat|term]]");
@@ -805,6 +853,120 @@ fn create_scmi_device(cfg: &mut BackendConfig) -> std::result::Result<(), Backen
     Ok(())
 }
 
+struct VirtioInputConfig {
+      sel: u8,
+      subsel: u8,
+      size: u8,
+      reserved: [u8; 5],
+      payload: [u8; 128],
+}
+
+impl VirtioInputConfig {
+    fn gen_config(mmio: &mut MmioDevice, sel: u8, subsel: u8) -> VirtioInputConfig {
+        let mut sel_subsel: [u8; 2] = [0; 2];
+        const len: usize = std::mem::size_of::<VirtioInputConfig>();
+        let mut data: [u8; len] = [0; len];
+
+        debug!("{}", format!("gen config for sel:{} subsel:{}", sel, subsel));
+        sel_subsel[0] = sel as u8;
+        sel_subsel[1] = subsel as u8;
+        mmio.write(VIRTIO_MMIO_INPUT_SEL as u64, &mut sel_subsel);
+        /*
+         * Read the device specific data after setting the sel and subsel,
+         * 'data' contains VirtioInputConfig.
+        */
+        mmio.read(VIRTIO_MMIO_DEVICE_CONFIG as u64, &mut data);
+
+        assert!((data[0] == sel) && (data[1] == subsel) && (data[2] <= 128),
+            "failed to get config for input sel:{} subsel:{}!", sel, subsel);
+
+        VirtioInputConfig {
+            sel: data[0],
+            subsel: data[1],
+            size: data[2],
+            reserved: [0u8; 5],
+            payload: data[8..].try_into().unwrap(),
+        }
+
+    }
+}
+
+fn init_input_config(label: u32, mmio: &mut MmioDevice, sfd: &mut SafeDescriptor, driver_variant: u8) {
+    let mut vinputdata: Vec<VirtioInputConfig> = Vec::new();
+    let mut vinputdc = VirtioInputDeviceConfig {
+        _label: label,
+        _device_id: 0,
+        _prop_bits: 0,
+        _num_ev_types: 0,
+        _num_abs_axes: 0,
+        _reserved: 0,
+    };
+
+    let mut num_ev: u8 = 0;
+    let mut num_abs: u8 = 0;
+
+    let config = VirtioInputConfig::gen_config(mmio, VIRTIO_INPUT_CFG_ID_NAME, 0);
+    vinputdata.push(config);
+
+    let config = VirtioInputConfig::gen_config(mmio, VIRTIO_INPUT_CFG_ID_SERIAL, 0);
+    vinputdata.push(config);
+
+    let config = VirtioInputConfig::gen_config(mmio, VIRTIO_INPUT_CFG_ID_DEVIDS, 0);
+    assert!(config.size == 8, "device id size is not correct!");
+    vinputdc._device_id = u64::from_le_bytes(config.payload[0..8].try_into().unwrap());
+    debug!("{}", format!("device id is {:#x}", vinputdc._device_id));
+
+    // get PROPBITS- 0x10
+    let config = VirtioInputConfig::gen_config(mmio, VIRTIO_INPUT_CFG_PROP_BITS, 0);
+    assert!(config.size <= 4, "prop bits size is not correct!");
+    vinputdc._prop_bits = u32::from_le_bytes(config.payload[0..4].try_into().unwrap());
+    debug!("{}", format!("prop bits is {:#x}", vinputdc._prop_bits));
+
+    // get EV_BITS - 0x11
+    for ev_type in 0..EV_CNT as u8 {
+        let config = VirtioInputConfig::gen_config(mmio, VIRTIO_INPUT_CFG_EV_BITS, ev_type);
+        if config.size != 0 {
+            vinputdata.push(config);
+            num_ev += 1;
+        }
+    }
+    // get ABS_INFO - 0x12
+    for abs_axis in 0..ABS_CNT as u8 {
+        let config = VirtioInputConfig::gen_config(mmio, VIRTIO_INPUT_CFG_ABS_INFO, abs_axis);
+        if config.size != 0 {
+            vinputdata.push(config);
+            num_abs += 1;
+        }
+    }
+
+    debug!("{}", format!("evt types num is {}", num_ev));
+    debug!("{}", format!("abs axes num is {}", num_abs));
+
+    vinputdc._num_ev_types = num_ev;
+    vinputdc._num_abs_axes = num_abs;
+
+    // set input device config with ioctl
+    let ret = unsafe { ioctl_with_mut_ref(sfd, to_cmd(VmIoctl::SetInputDeviceConfig, driver_variant)
+                                          .expect(&format!("{}:{}", file!(), line!())), &mut vinputdc)};
+    assert!(ret == 0, "{}:{}:ret={}, {}", file!(), line!(), ret, io::Error::last_os_error());
+
+    // set input device data with ioctl
+    for config in vinputdata {
+        let mut cdata = VirtioInputDeviceData {
+            _label: label,
+            _sel: config.sel,
+            _subsel: config.subsel,
+            _size: config.size,
+            _reserved: [0u8; 5],
+            _payload: config.payload.clone(),
+        };
+
+        let ret = unsafe { ioctl_with_mut_ref(sfd, to_cmd(VmIoctl::SetInputDeviceData, driver_variant)
+                                          .expect(&format!("{}:{}", file!(), line!())), &mut cdata)};
+        assert!(ret == 0, "{}:{}:ret={}, {}", file!(), line!(), ret, io::Error::last_os_error());
+    }
+}
+
 fn create_vinput_devices(cfg: &mut BackendConfig) -> std::result::Result<(), BackendError> {
     for vinput in &mut cfg.vinputs {
         let mem = cfg.mem.as_ref().expect(&format!("{}:{}", file!(), line!()));
@@ -824,10 +986,7 @@ fn create_vinput_devices(cfg: &mut BackendConfig) -> std::result::Result<(), Bac
                 val: io::Error::last_os_error(),
             })?;
 
-        let mut input_features: u64 = virtio::base_features(ProtectionType::Unprotected);
-        // Indicates flat device config
-        input_features |= 1 << VIRTIO_INPUT_F_FLAT_CFG;
-        let inputdev = virtio::new_evdev(dev_file, input_features)
+        let inputdev = virtio::new_evdev(dev_file, base_features(ProtectionType::Unprotected))
             .map_err(|_| BackendError::StrError(String::from("set up input device failed")))?;
 
         vinput.mmio = Some(MmioDevice::new(mem.clone(), Box::new(inputdev)).expect(&format!("{}:{}", file!(), line!())));
@@ -924,6 +1083,60 @@ fn create_console_devices(cfg: &mut BackendConfig) -> std::result::Result<(), Ba
             val: io::Error::last_os_error(),
         });
     }
+    Ok(())
+}
+
+fn create_vuscmi_devices(cfg: &mut BackendConfig) -> std::result::Result<(), BackendError> {
+    let mem = cfg.mem.as_ref().expect(&format!("{}:{}", file!(), line!()));
+    let sfd :&SafeDescriptor;
+    let q_size :Option<u16>;
+    match cfg.driver_variant {
+        1 => {sfd = cfg.sfd.as_ref().expect(&format!("{}:{}", file!(), line!())); q_size = Some(256)}
+        2 => {sfd = cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!())); q_size = Some(128)}
+        _ => return Err(BackendError::StrError(String::from("Unsupported driver variant.")))
+    };
+
+    let vuscmidev =  VhostUserScmi::new(virtio::base_features(ProtectionType::Unprotected), &cfg.vuscmi.vhost_user_scmi.socket)
+                          .map_err(|_| BackendError::StrError(String::from("vhost scmi new failed")))?;
+
+    cfg.vuscmi.mmio = Some(MmioDevice::new(mem.clone(), Box::new(vuscmidev)).expect(&format!("{}:{}", file!(), line!())));
+    let mut idx = 0;
+    let mmio = cfg.vuscmi.mmio.as_ref().expect(&format!("{}:{}", file!(), line!()));
+    for e in mmio.queue_evts() {
+        let event_fd = VirtioEventfd {
+            _label : cfg.vuscmi.label,
+            _flags : ASSIGN_EVENTFD,
+            _queue_num : idx,
+            _fd : e.as_raw_descriptor(),
+        };
+
+        idx = idx + 1;
+        let ret = unsafe { ioctl_with_ref(sfd, to_cmd(VmIoctl::IoEventFd, cfg.driver_variant)
+                                                  .expect(&format!("{}:{}", file!(), line!())), &event_fd) };
+        if ret < 0 {
+            return Err(BackendError::StrNumError {
+                err: String::from("ioeventfd ioctl failed"),
+                val: io::Error::last_os_error(),
+                });
+            }
+        }
+
+        let irq_fd = VirtioIrqfd {
+            _label: cfg.vuscmi.label,
+            _fd : mmio.interrupt_evt().expect(&format!("{}:{}", file!(), line!())).as_raw_descriptor(),
+            _flags: VBE_ASSIGN_IRQFD,
+            _reserved: 0,
+        };
+
+        let ret = unsafe { ioctl_with_ref(sfd, to_cmd(VmIoctl::IrqFd, cfg.driver_variant)
+                               .expect(&format!("{}:{}", file!(), line!())), &irq_fd) };
+        if ret < 0 {
+            return Err(BackendError::StrNumError {
+                err: String::from("irqfd ioctl failed"),
+                val: io::Error::last_os_error(),
+            });
+        }
+
     Ok(())
 }
 
@@ -1356,6 +1569,7 @@ fn run_backend_v2(cfg: &mut BackendConfig) -> std::result::Result<(), ()>
             let mut cspace = vinput.config_space.take().expect(&format!("{}:{}", file!(), line!()));
             let driver_variant = cfg.driver_variant;
             init_config_space(&mut cspace, label, &mut mmio, &mut sfd, driver_variant);
+            init_input_config(label, &mut mmio, &mut sfd, driver_variant);
 
             let handle = thread::spawn(move || {
                 handle_events(label, sfd, &mut mmio, &mut cspace, driver_variant);
@@ -1409,6 +1623,28 @@ fn run_backend_v2(cfg: &mut BackendConfig) -> std::result::Result<(), ()>
         console_thread_handles.push(handle);
     }
 
+    let mut vuscmi_thread_handles = Vec::new();
+    if cfg.vuscmi.enable {
+        let e = create_vuscmi_devices(cfg);
+        if let Err(_e) = e {
+            error!("{}", _e);
+            panic!("{}", _e);
+        }
+
+        let label = cfg.vuscmi.label;
+        let mut sfd = cfg.vm_sfd.as_mut().expect(&format!("{}:{}", file!(), line!())).try_clone()
+                      .expect(&format!("{}:{}", file!(), line!()));
+        let mut mmio = cfg.vuscmi.mmio.take().expect(&format!("{}:{}", file!(), line!()));
+        let mut cspace = cfg.vuscmi.config_space.take().expect(&format!("{}:{}", file!(), line!()));
+        let driver_variant = cfg.driver_variant;
+        init_config_space(&mut cspace, label, &mut mmio, &mut sfd, driver_variant);
+
+        let handle = thread::spawn(move || {
+            handle_events(label, sfd, &mut mmio, &mut cspace, driver_variant);
+            });
+        vuscmi_thread_handles.push(handle);
+    }
+
     let e = create_vcpus(cfg);
     if let Err(_e) = e {
         error!("{}", _e);
@@ -1456,6 +1692,12 @@ fn run_backend_v2(cfg: &mut BackendConfig) -> std::result::Result<(), ()>
 
     if cfg.vconsole.enable {
         for handle in console_thread_handles {
+            let _ret = handle.join();
+        }
+    }
+
+    if cfg.vuscmi.enable {
+        for handle in vuscmi_thread_handles {
             let _ret = handle.join();
         }
     }
@@ -1915,6 +2157,66 @@ fn set_argument(cfg: &mut BackendConfig, name: &str, value: Option<&str>) -> arg
             };
         }
 
+        "vhost-user-scmi" => {
+            let mut vuscmi_label: u32 = 0;
+            let param = value.expect(&format!("{}:{}", file!(), line!()));
+            let mut components = param.split(',');
+            let vu = VhostUserOption {
+                        socket: PathBuf::from(
+                            components
+                            .next()
+                            .ok_or_else(|| argument::Error::InvalidValue {
+                                value: param.to_owned(),
+                                expected: String::from("missing vhost user scmi sock path"),
+                            })?,
+                            ),
+            };
+            for opt in components {
+                let mut o = opt.splitn(2, '=');
+                let kind = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                    value: opt.to_owned(),
+                    expected: String::from("vhost-user-scmi options must not be empty"),
+                })?;
+
+                let value = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                    value: opt.to_owned(),
+                    expected: String::from("vhost-user-scmi options must be of the form `kind=value`"),
+                })?;
+
+                match kind {
+                    "label" => {
+                        let label: u32 = u32::from_str_radix(value, 16)
+                            .map_err(|_| argument::Error::InvalidValue {
+                                value: value.to_owned(),
+                                expected: String::from("`label` must be an unsigned integer"),
+                            })?;
+                        if label == 0 {
+                            return Err(argument::Error::InvalidValue {
+                                value: value.to_owned(),
+                                expected: String::from("`label` must be a non zero integer"),
+                            });
+
+                        }
+                        vuscmi_label = label;
+                    }
+
+                    _ => {
+                        return Err(argument::Error::InvalidValue {
+                            value: kind.to_owned(),
+                            expected: String::from("vhost-user-scmi only supports label"),
+                        });
+                    }
+                }
+            }
+            cfg.vuscmi = VuVirtioScmi {
+                enable: true,
+                label: vuscmi_label,
+                mmio: None,
+                config_space: Some(Vec::new()),
+                vhost_user_scmi: vu,
+            };
+        }
+
         "net" => {
             let param = value.unwrap();
             let mut components = param.split(',');
@@ -2302,6 +2604,7 @@ fn parse_and_run(args: std::env::Args) -> std::result::Result<(), ()> {
                               Valid keys:
                               label=LABEL - Indicates the label associated with the scmi virtio device"),
 
+        Argument::value("vhost-user-scmi", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::short_value('n',"net","label=LABEL[,key=value[,key=value[,key=value[,...]]]]","net device followed by comma-separated options.
                               Valid keys:
                               label=LABEL - Indicates the label associated with the virtual net dev
