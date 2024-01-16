@@ -952,6 +952,12 @@ fn init_input_config(label: u32, mmio: &mut MmioDevice, sfd: &mut SafeDescriptor
 
     // set input device data with ioctl
     for config in vinputdata {
+        if (config.size == 0) {
+            warn!("[input<label={:#x}>]: data in sel<{}>/subsel<{}> is none, will not send to kernel",
+                  label, config.sel, config.subsel);
+            continue;
+        }
+
         let mut cdata = VirtioInputDeviceData {
             _label: label,
             _sel: config.sel,
