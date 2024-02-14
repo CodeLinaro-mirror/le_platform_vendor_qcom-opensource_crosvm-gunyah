@@ -952,6 +952,12 @@ fn init_input_config(label: u32, mmio: &mut MmioDevice, sfd: &mut SafeDescriptor
 
     // set input device data with ioctl
     for config in vinputdata {
+        if (config.size == 0) {
+            warn!("[input<label={:#x}>]: data in sel<{}>/subsel<{}> is none, will not send to kernel",
+                  label, config.sel, config.subsel);
+            continue;
+        }
+
         let mut cdata = VirtioInputDeviceData {
             _label: label,
             _sel: config.sel,
@@ -1277,7 +1283,11 @@ fn handle_events(label: u32, sfd: SafeDescriptor, mmio: &mut MmioDevice, cspace:
                     return 0;
                 }
             }
-            EVENT_APP_EXIT => return 0,
+            EVENT_APP_EXIT =>  {
+                let bytes = 0x0u32.to_le_bytes();
+                mmio.write(VIRTIO_MMIO_STATUS, &bytes);
+                return 0;
+            }
             _ => error!("{}", format!("Unexpected event {} received", vevent._event)),
         }
     }
