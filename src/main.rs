@@ -40,7 +40,8 @@ use std::convert::TryInto;
 
 use devices::virtio::block::block::DiskOption;
 use devices::virtio::vhost::user::vmm::{
-    Hab as VhostUserHab, Scmi as VhostUserScmi, I2cAdapter as VhostUserI2cAdapter
+    Hab as VhostUserHab, Scmi as VhostUserScmi, I2cAdapter as VhostUserI2cAdapter,
+    GlinkPassthrough as VhostUserGP
 };
 
 use crosvm::{
@@ -146,6 +147,14 @@ pub struct VirtioNet {
     config_space: Option<Vec<u32>>,
 }
 
+struct VuVirtioGP {
+    enable: bool,
+    label: u32,
+    mmio: Option<MmioDevice>,
+    config_space: Option<Vec<u32>>,
+    vhost_user_gp: VhostUserOption,
+}
+
 struct VirtioHab {
     label: u32,
     hab_deviceId : u32,
@@ -246,6 +255,7 @@ struct BackendConfig {
     vhost_net_device_path: PathBuf,
     vhost_net: bool,
     log_type: Option<String>,
+    vugp: VuVirtioGP,
     vuscmi: VuVirtioScmi,
     vui2c: Vec<VuVirtioI2c>,
     vhosthab: Vec<VirtioHab>,
@@ -293,6 +303,15 @@ impl Default for BackendConfig {
             vhost_net_device_path: PathBuf::from(VHOST_NET_PATH),
             vhost_net: true,
             log_type: Some("ftrace".to_string()),
+            vugp:VuVirtioGP {
+                enable: false,
+                label: 0,
+                mmio: None,
+                config_space: None,
+                vhost_user_gp: VhostUserOption {
+                    socket: PathBuf::new()
+                }
+            },
             vuscmi: VuVirtioScmi {
                 enable: false,
                 label: 0,
@@ -759,6 +778,55 @@ fn create_block_devices(cfg: &mut BackendConfig) -> std::result::Result<(), Back
         }
     }
 
+    Ok(())
+}
+
+fn create_vugp_devices(cfg: &mut BackendConfig) -> std::result::Result<(), BackendError> {
+    let mem = cfg.mem.as_ref().expect(&format!("{}:{}", file!(), line!()));
+    let sfd :&SafeDescriptor;
+    let q_size :Option<u16>;
+    match cfg.driver_variant {
+        1 => {sfd = cfg.sfd.as_ref().expect(&format!("{}:{}", file!(), line!())); q_size = Some(256)}
+        2 => {sfd = cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!())); q_size = Some(128)}
+        _ => return Err(BackendError::StrError(String::from("Unsupported driver variant.")))
+    };
+    let vugpdev =  VhostUserGP::new(virtio::base_features(ProtectionType::Unprotected), &cfg.vugp.vhost_user_gp.socket)
+    .map_err(|_| BackendError::StrError(String::from("vhost gp new failed")))?;
+
+    cfg.vugp.mmio = Some(MmioDevice::new(mem.clone(), Box::new(vugpdev)).expect(&format!("{}:{}", file!(), line!())));
+    let mut idx = 0;
+    let mmio = cfg.vugp.mmio.as_ref().expect(&format!("{}:{}", file!(), line!()));
+    for e in mmio.queue_evts() {
+        let event_fd = VirtioEventfd {
+            _label : cfg.vugp.label,
+            _flags : ASSIGN_EVENTFD,
+            _queue_num : idx,
+            _fd : e.as_raw_descriptor(),
+        };
+        idx = idx + 1;
+        let ret = unsafe { ioctl_with_ref(sfd, to_cmd(VmIoctl::IoEventFd, cfg.driver_variant)
+                                                  .expect(&format!("{}:{}", file!(), line!())), &event_fd) };
+        if ret < 0 {
+            return Err(BackendError::StrNumError {
+                err: String::from("ioeventfd ioctl failed"),
+                val: io::Error::last_os_error(),
+            });
+        }
+    }
+    let irq_fd = VirtioIrqfd {
+        _label:cfg.vugp.label,
+        _fd : mmio.interrupt_evt().expect(&format!("{}:{}", file!(), line!())).as_raw_descriptor(),
+        _flags: VBE_ASSIGN_IRQFD,
+        _reserved: 0,
+    };
+    let ret = unsafe { ioctl_with_ref(sfd, to_cmd(VmIoctl::IrqFd, cfg.driver_variant)
+                                        .expect(&format!("{}:{}", file!(), line!())), &irq_fd) };
+    if ret < 0 {
+        return Err(BackendError::StrNumError {
+            err: String::from("irqfd ioctl failed"),
+            val: io::Error::last_os_error(),
+        });
+    }
     Ok(())
 }
 
@@ -1730,7 +1798,7 @@ fn run_backend_v2(cfg: &mut BackendConfig) -> std::result::Result<(), ()>
 
         let handle = thread::spawn(move || {
             handle_events(label, sfd, &mut mmio, &mut cspace, driver_variant);
-            });
+        });
         vuscmi_thread_handles.push(handle);
     }
 
@@ -1741,7 +1809,6 @@ fn run_backend_v2(cfg: &mut BackendConfig) -> std::result::Result<(), ()>
             error!("{}", _e);
             panic!("{}", _e);
         }
-
         for vi2c in &mut cfg.vui2c {
             let label = vi2c.label;
             let mut sfd = cfg.vm_sfd.as_mut().expect(&format!("{}:{}", file!(), line!())).try_clone()
@@ -1756,6 +1823,27 @@ fn run_backend_v2(cfg: &mut BackendConfig) -> std::result::Result<(), ()>
             });
             vui2c_thread_handles.push(handle);
         }
+    }
+
+    let mut vugp_thread_handles = Vec::new();
+    if cfg.vugp.enable {
+        let e = create_vugp_devices(cfg);
+        if let Err(_e) = e {
+            error!("{}", _e);
+            panic!("{}", _e);
+        }
+        let label = cfg.vugp.label;
+        let mut sfd = cfg.vm_sfd.as_mut().expect(&format!("{}:{}", file!(), line!())).try_clone()
+            .expect(&format!("{}:{}", file!(), line!()));
+        let mut mmio = cfg.vugp.mmio.take().expect(&format!("{}:{}", file!(), line!()));
+        let mut cspace = cfg.vugp.config_space.take().expect(&format!("{}:{}", file!(), line!()));
+        let driver_variant = cfg.driver_variant;
+        init_config_space(&mut cspace, label, &mut mmio, &mut sfd, driver_variant);
+
+        let handle = thread::spawn(move || {
+            handle_events(label, sfd, &mut mmio, &mut cspace, driver_variant);
+        });
+        vugp_thread_handles.push(handle);
     }
 
     let e = create_vcpus(cfg);
@@ -1817,6 +1905,12 @@ fn run_backend_v2(cfg: &mut BackendConfig) -> std::result::Result<(), ()>
 
     if !cfg.vui2c.is_empty() {
         for handle in vui2c_thread_handles {
+            let _ret = handle.join();
+        }
+    }
+
+    if cfg.vugp.enable {
+        for handle in vugp_thread_handles {
             let _ret = handle.join();
         }
     }
@@ -2514,6 +2608,67 @@ fn set_argument(cfg: &mut BackendConfig, name: &str, value: Option<&str>) -> arg
             cfg.vnet.push(vnet_dev);
         }
 
+        "vhost-user-gp" => {
+            let mut vugp_label: u32 = 0;
+            let param = value.unwrap();
+            let mut components = param.split(',');
+
+            let vu = VhostUserOption {
+                socket: PathBuf::from(
+                            components
+                            .next()
+                            .ok_or_else(|| argument::Error::InvalidValue {
+                                value: param.to_owned(),
+                                expected: String::from("missing vhost gp sock path"),
+                            })?,
+                            ),
+            };
+
+            for opt in components {
+                let mut o = opt.splitn(2, '=');
+                let kind = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                    value: opt.to_owned(),
+                    expected: String::from("vhost gp options must not be empty"),
+                })?;
+
+                let value = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                    value: opt.to_owned(),
+                    expected: String::from("vhost gp options must be of the form `kind=value`"),
+                })?;
+
+                match kind {
+                    "label" => {
+                        let label: u32 = u32::from_str_radix(value, 16)
+                             .map_err(|_| argument::Error::InvalidValue {
+                                  value: value.to_owned(),
+                                  expected: String::from("`label` must be an unsigned integer"),
+                                  })?;
+                        if label == 0 {
+                            return Err(argument::Error::InvalidValue {
+                                value: value.to_owned(),
+                                expected: String::from("`label` must be a non zero integer"),
+                                });
+                            }
+                        vugp_label = label;
+                    }
+
+                    _ => {
+                        return Err(argument::Error::InvalidValue {
+                            value: kind.to_owned(),
+                            expected: String::from("supported vhost gp options only"),
+                        });
+                    }
+                }
+            }
+            cfg.vugp = VuVirtioGP {
+                enable:true,
+                label:vugp_label,
+                mmio:None,
+                config_space:Some(Vec::new()),
+                vhost_user_gp:vu
+            };
+        }
+
         "vhost-user-hab" => {
             let param = value.unwrap();
             let mut components = param.split(',');
@@ -2789,6 +2944,7 @@ fn parse_and_run(args: std::env::Args) -> std::result::Result<(), ()> {
         Argument::value("vhost-user-hab", "SOCKET_PATH", "label=LABEL[,key=value[,...]],device-id= device id  , queue-num = Number of queues"),
         Argument::short_value('i', "input", "PATH,label=LABEL[,key=value[,key=value[,...]]", "Path to a input device followed by comma-separated option label=LABEL."),
         Argument::value("console", "PATH,label=LABEL", "stdout or Path to a log file followed by comma-separated option label=LABEL"),
+        Argument::value("vhost-user-gp", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         ];
     let mut cfg = BackendConfig::default();
     let match_res = set_arguments(args, &arguments[..], |name, value| {
