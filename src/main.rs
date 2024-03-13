@@ -1283,7 +1283,11 @@ fn handle_events(label: u32, sfd: SafeDescriptor, mmio: &mut MmioDevice, cspace:
                     return 0;
                 }
             }
-            EVENT_APP_EXIT => return 0,
+            EVENT_APP_EXIT =>  {
+                let bytes = 0x0u32.to_le_bytes();
+                mmio.write(VIRTIO_MMIO_STATUS, &bytes);
+                return 0;
+            }
             _ => error!("{}", format!("Unexpected event {} received", vevent._event)),
         }
     }
