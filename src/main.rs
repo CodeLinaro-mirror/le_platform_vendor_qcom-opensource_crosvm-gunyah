@@ -30,6 +30,7 @@ use devices::virtio::{self, base_features, Block, Console, Net};
 use devices::serial_device::{SerialHardware, SerialParameters, SerialType};
 use hypervisor::{ProtectionType};
 use mmio::MmioDevice;
+use mmio::DEVICE_RESET;
 use devices::virtio::vhost::Scmi;
 
 use base::{pagesize, AsRawDescriptor};
@@ -1293,6 +1294,45 @@ fn create_vui2c_devices(cfg: &mut BackendConfig) -> std::result::Result<(), Back
     Ok(())
 }
 
+fn handle_device_reset(label: u32, sfd: &SafeDescriptor, mmio: &mut MmioDevice, driver_variant: u8) {
+    let mut first_time = 1;
+
+    let mut ackrst = VirtioAckReset {
+        _label: label,
+        _reserved: 0,
+    };
+    let status: u32 = DEVICE_RESET;
+    let bytes = status.to_le_bytes();
+    mmio.write(VIRTIO_MMIO_STATUS, &bytes);
+
+    let mut idx = 0;
+    for e in mmio.queue_evts() {
+        let event_fd = VirtioEventfd {
+            _label : label,
+            _flags : ASSIGN_EVENTFD,
+            _queue_num : idx,
+            _fd : e.as_raw_descriptor(),
+      };
+      idx = idx + 1;
+      let ret = unsafe { ioctl_with_ref(sfd,
+                    to_cmd(VmIoctl::IoEventFd, driver_variant)
+                    .expect(&format!("{}:{}", file!(), line!())),
+                    &event_fd)};
+      assert!(ret == 0, "{}:{}:ret={}, {}", file!(), line!(), ret,
+                    io::Error::last_os_error());
+    }
+
+    if first_time == 1 {
+        let ret = unsafe { ioctl_with_mut_ref(sfd,
+                    to_cmd(VmIoctl::AckReset, driver_variant)
+                    .expect(&format!("{}:{}", file!(), line!())),
+                    &mut ackrst)};
+        assert!(ret == 0, "{}:{}:ret={}, {}", file!(), line!(),
+                    ret, io::Error::last_os_error());
+        first_time = 0;
+    }
+}
+
 fn handle_driver_ok(label: u32, sfd: &SafeDescriptor, mmio: &mut MmioDevice, cspace: &mut Vec<u32>, driver_variant: u8) {
     let mut cdata = VirtioConfigData {
         _label: label,
@@ -1396,7 +1436,6 @@ fn handle_driver_ok(label: u32, sfd: &SafeDescriptor, mmio: &mut MmioDevice, csp
 }
 
 fn handle_events(label: u32, sfd: SafeDescriptor, mmio: &mut MmioDevice, cspace: &mut Vec<u32>, driver_variant: u8) -> u32 {
-    let mut first_time = 1;
     loop {
         let mut vevent  = VirtioEvent {
             _label: label,
@@ -1416,20 +1455,7 @@ fn handle_events(label: u32, sfd: SafeDescriptor, mmio: &mut MmioDevice, cspace:
                 let bytes = status.to_le_bytes();
                 mmio.write(VIRTIO_MMIO_INTERRUPT_ACK, &bytes);
             }
-            EVENT_RESET_RQST =>  {
-                let mut ackrst = VirtioAckReset {
-                    _label: label,
-                    _reserved: 0,
-                };
-                if first_time == 1 {
-                    let ret = unsafe { ioctl_with_mut_ref(&sfd, to_cmd(VmIoctl::AckReset, driver_variant)
-                                                          .expect(&format!("{}:{}", file!(), line!())), &mut ackrst)};
-                    assert!(ret == 0, "{}:{}:ret={}, {}", file!(), line!(), ret, io::Error::last_os_error());
-                    first_time = 0;
-                } else {
-                    return 0;
-                }
-            }
+            EVENT_RESET_RQST => handle_device_reset(label, &sfd, mmio, driver_variant),
             EVENT_APP_EXIT =>  {
                 let bytes = 0x0u32.to_le_bytes();
                 mmio.write(VIRTIO_MMIO_STATUS, &bytes);
