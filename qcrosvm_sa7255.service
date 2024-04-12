@@ -1,0 +1,25 @@
+# Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+[Unit]
+Description=Service to start the Android GVM
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/qcrosvm \
+--vm=autoghgvm \
+--disk=/dev/disk/by-partlabel/la_super,label=17,rw=true \
+--disk=/dev/disk/by-partlabel/la_userdata,label=16,rw=true \
+--disk=/dev/disk/by-partlabel/la_metadata,label=15,rw=true \
+--disk=/dev/disk/by-partlabel/la_persist,label=11,rw=true \
+--disk=/dev/disk/by-partlabel/la_misc,label=10,rw=true \
+--net=true,label=13,ip_addr=10.10.10.10,netmask=255.255.255.0,mac=5A:6F:F0:05:7C:24 \
+--vhost-user-hab "/tmp/linux-vm2-disp-skt",label=1A,device-id=93,queue-num=10 \
+--vhost-user-hab "/tmp/linux-vm2-ogles-skt",label=14,device-id=94,queue-num=2 \
+--vhost-user-hab "/tmp/linux-vm2-misc-skt",label=18,device-id=90,queue-num=2 \
+--vhost-user-hab "/tmp/linux-vm2-aud-skt",label=19,device-id=91,queue-num=8 \
+--vhost-user-hab "/tmp/linux-vm2-vid-skt",label=1B,device-id=95,queue-num=6 \
+--vhost-user-hab "/tmp/linux-vm2-cam-skt",label=1C,device-id=92,queue-num=4 \
+--input=/dev/input/event2,label=1D
+
+[Install]
+WantedBy = multi-user.target
