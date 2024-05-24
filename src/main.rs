@@ -70,7 +70,7 @@ use minijail::Minijail;
 
 static GH_PATH: &str = "/dev/gunyah";
 static VIRTIO_BE_PATH: &str = "/dev/gh_virtio_backend_";
-static TRACE_MARKER: &str = "/sys/kernel/debug/tracing/trace_marker";
+static TRACE_MARKER: &str = "/sys/kernel/tracing/trace_marker";
 static VHOST_SCMI_PATH: &str = "/dev/vhost-scmi";
 
 // Todo: Use UAPI header files
