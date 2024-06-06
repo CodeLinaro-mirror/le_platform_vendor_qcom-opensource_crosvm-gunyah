@@ -23,6 +23,8 @@ ExecStart=/usr/bin/qcrosvm \
 --disk=/dev/disk/by-partlabel/bluetooth_b,label=2D,rw=false \
 --disk=/dev/disk/by-partlabel/modem_a,label=2E,rw=false \
 --disk=/dev/disk/by-partlabel/modem_b,label=2F,rw=false \
+--disk=/dev/disk/by-partlabel/vbmeta_a,label=30,rw=false \
+--disk=/dev/disk/by-partlabel/vbmeta_b,label=31,rw=false \
 --disk=/dev/disk/by-partlabel/la_misc,label=32,rw=true \
 --disk=/dev/disk/by-partlabel/la_persist,label=33,rw=true \
 --disk=/dev/disk/by-partlabel/la_metadata,label=34,rw=true \
