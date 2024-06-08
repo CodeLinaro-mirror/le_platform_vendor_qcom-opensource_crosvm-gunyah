@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021, 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause-Clear
  */
 
@@ -258,6 +258,7 @@ struct BackendConfig {
     driver_variant: u8,
     scmi: ScmiDevice,
     sandbox: bool,
+    non_protected_virtio: bool,
     log_level: LevelFilter,
     network_dev: bool,
     ip_addr: Option<net::Ipv4Addr>,
@@ -307,6 +308,7 @@ impl Default for BackendConfig {
                 config_space: None,
             },
             sandbox: false,
+            non_protected_virtio: false,
             log_level: log::LevelFilter::Info,
             network_dev: false,
             ip_addr: None,
@@ -456,6 +458,14 @@ struct VirtioInputDeviceData {
     _payload: [u8; 128],
 }
 
+#[repr(C)]
+struct VmMemRegion {
+    _mem_idx: u8,
+    _mem_phys: u64,
+    _mem_size: u64,
+    _fd: RawFd,
+}
+
 /* system ioctls */
 ioctl_io_nr!(GH_CREATE_VM,          GH_IOCTL_TYPE_V2, 0x01);
 
@@ -464,6 +474,8 @@ ioctl_io_nr!(GH_CREATE_VCPU,            GH_IOCTL_TYPE_V2, 0x40);
 ioctl_iow_nr!(GH_VM_SET_FW_NAME,        GH_IOCTL_TYPE_V2, 0x41, fw_name);
 ioctl_ior_nr!(GH_VM_GET_FW_NAME,        GH_IOCTL_TYPE_V2, 0x42, fw_name);
 ioctl_io_nr!(GH_GET_VCPU_COUNT,         GH_IOCTL_TYPE_V2, 0x43);
+ioctl_io_nr!(GH_VM_GET_MEM_COUNT,       GH_IOCTL_TYPE_V2, 0x44);
+ioctl_iowr_nr!(GH_VM_GET_MEM_REGION,    GH_IOCTL_TYPE_V2, 0x45, VmMemRegion);
 
 /* vm ioctls for virtio backend driver */
 ioctl_ior_nr!(GET_SHARED_MEMORY_SIZE_V2,    GH_IOCTL_TYPE_V2, 0x61, u64);
@@ -589,6 +601,23 @@ fn new_from_rawfd(ranges: &[(GuestAddress, u64)], fd: &RawFd) -> std::result::Re
     GuestMemory::from_regions(regions)
 }
 
+
+fn create_vm_mem_region(range: (GuestAddress, u64), fd: &RawFd, mem_ranges: &mut Vec<MemoryRegion>) -> std::result::Result<(), GuestMemoryError> {
+    let pg_size = pagesize();
+
+    if range.1 % pg_size as u64 != 0 {
+        return Err(GuestMemoryError::MemoryNotAligned);
+    }
+
+    let file = Arc::new(unsafe { File::from_raw_fd(*fd) });
+    let region = MemoryRegion::new_from_file(range.1, range.0, 0, file)
+        .map_err(|e| {
+                error!("{}", format!("failed to create mem region, addr:{}, size:{}. Err: {}", range.0, range.1, e));
+                ()}).expect(&format!("{}:{}", file!(), line!()));
+
+    mem_ranges.push(region);
+    Ok(())
+}
 
 fn raw_fd_from_path(path: &Path) -> std::result::Result<RawFd, ()> {
     if !path.is_file() {
@@ -1725,18 +1754,48 @@ fn run_backend_v2(cfg: &mut BackendConfig) -> std::result::Result<(), ()>
     cfg.vcpu_count = vcpu_count as u16;
     info!("{}", format!("vcpu_count {}", cfg.vcpu_count));
 
-    if !cfg.vdisks.is_empty() || !cfg.vnet.is_empty() {
-        let mut shmem_size: u64 = 0;
-        let ret = unsafe { ioctl_with_mut_ref(vm_sfd, GET_SHARED_MEMORY_SIZE_V2(), &mut shmem_size) };
-        if ret != 0 || shmem_size == 0 {
-            error!("{}", format!("Error: get vm shared memory size ioctl failed {:?}", io::Error::last_os_error()));
-            panic!("{}", format!("Error: get vm shared memory size ioctl failed {:?}", io::Error::last_os_error()));
+    if cfg.non_protected_virtio {
+        let vm_mem_count = unsafe { libc::ioctl(vm_fd, GH_VM_GET_MEM_COUNT()) };
+        if vm_mem_count <= 0 {
+            error!("{}", format!("Error: get vm mem count ioctl failed {:?}", io::Error::last_os_error()));
+            panic!("{}", format!("Error: get vm mem count ioctl failed {:?}", io::Error::last_os_error()));
+        }
+        info!("{}", format!("vm_mem_count {}", vm_mem_count));
+
+        let mut mem_ranges = Vec::new();
+        for mem_idx in 0..vm_mem_count as u8 {
+            let mut mem_region = VmMemRegion {
+                _mem_idx: mem_idx,
+                _mem_phys: 0,
+                _mem_size: 0,
+                _fd: 0,
+            };
+
+            let ret = unsafe { ioctl_with_mut_ref(vm_sfd, GH_VM_GET_MEM_REGION(), &mut mem_region) };
+            if ret != 0 {
+                error!("{}", format!("Error: get vm mem region ioctl failed {:?}", io::Error::last_os_error()));
+                panic!("{}", format!("Error: get vm mem region ioctl failed {:?}", io::Error::last_os_error()));
+            }
+
+            let _ = create_vm_mem_region((GuestAddress(mem_region._mem_phys), mem_region._mem_size), &mem_region._fd, &mut mem_ranges);
         }
 
-        info!("{}", format!("shmem_size {}", shmem_size));
+        cfg.mem = Some(GuestMemory::from_regions(mem_ranges)
+                    .expect(&format!("{}:{}", file!(), line!())));
+    } else {
+        if !cfg.vdisks.is_empty() || !cfg.vnet.is_empty() {
+            let mut shmem_size: u64 = 0;
+            let ret = unsafe { ioctl_with_mut_ref(vm_sfd, GET_SHARED_MEMORY_SIZE_V2(), &mut shmem_size) };
+            if ret != 0 || shmem_size == 0 {
+                error!("{}", format!("Error: get vm shared memory size ioctl failed {:?}", io::Error::last_os_error()));
+                panic!("{}", format!("Error: get vm shared memory size ioctl failed {:?}", io::Error::last_os_error()));
+            }
 
-        cfg.mem = Some(self::new_from_rawfd(&[(GuestAddress(0), shmem_size)], &vm_fd)
-                       .expect(&format!("{}:{}", file!(), line!())));
+            info!("{}", format!("shmem_size {}", shmem_size));
+
+            cfg.mem = Some(self::new_from_rawfd(&[(GuestAddress(0), shmem_size)], &vm_fd)
+                        .expect(&format!("{}:{}", file!(), line!())));
+        }
     }
 
     let mut blk_thread_handles  = Vec::new();
@@ -2389,6 +2448,10 @@ fn set_argument(cfg: &mut BackendConfig, name: &str, value: Option<&str>) -> arg
 
         "sandbox" => {
             cfg.sandbox = true;
+        }
+
+        "use-non-protected-virtio" => {
+            cfg.non_protected_virtio = true;
         }
 
         "log" => {
@@ -3118,6 +3181,7 @@ fn parse_and_run(args: std::env::Args) -> std::result::Result<(), ()> {
                               "Logging Configurations. Default level: info, Default type: ftrace"),
         Argument::short_value('v', "vm", "VMNAME", "Virtual Machine Name"),
         Argument::short_flag('s', "sandbox", "Sandbox using minijail (default: disabled."),
+        Argument::flag("use-non-protected-virtio", "Use non protected VirtIO (no bounce buffers) (default: disabled)"),
         Argument::short_value('c', "scmi", "label=LABEL[,key=value[,key=value[,...]]", "Enable SCMI with the given label.
                               Valid keys:
                               label=LABEL - Indicates the label associated with the scmi virtio device"),
