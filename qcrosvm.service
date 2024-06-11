@@ -13,6 +13,7 @@ After=dev-input-vmm\x2dpwr\x2dkey.device
 Type=simple
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvm \
+--use-non-protected-virtio \
 --disk=/dev/disk/by-partlabel/la_init_boot_a,label=22,rw=true \
 --disk=/dev/disk/by-partlabel/la_init_boot_b,label=23,rw=true \
 --disk=/dev/disk/by-partlabel/la_v_boot_a,label=24,rw=true \
