@@ -49,7 +49,7 @@ use sync::Mutex;
 use devices::pci::MsixConfig;
 use devices::pci::PciId;
 
-const DEVICE_RESET: u32 = 0x0;
+pub const DEVICE_RESET: u32 = 0x0;
 const DEVICE_ACKNOWLEDGE: u32 = 0x01;
 const DEVICE_DRIVER: u32 = 0x02;
 const DEVICE_DRIVER_OK: u32 = 0x04;
@@ -310,6 +310,9 @@ impl MmioDevice {
             self.device_activated = false;
             self.queues.iter_mut().for_each(Queue::reset);
             self.queue_select = 0;
+            for _ in self.device.queue_max_sizes().iter() {
+                self.queue_evts.push(Event::new().unwrap());
+            }
         }
     }
 }
