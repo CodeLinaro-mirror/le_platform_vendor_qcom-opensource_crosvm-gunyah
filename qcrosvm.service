@@ -13,6 +13,8 @@ After=dev-input-vmm\x2dpwr\x2dkey.device
 Type=simple
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvm \
+--use-non-protected-virtio \
+--disk=/dev/disk/by-partlabel/la_devinfo,label=21,rw=true \
 --disk=/dev/disk/by-partlabel/la_init_boot_a,label=22,rw=true \
 --disk=/dev/disk/by-partlabel/la_init_boot_b,label=23,rw=true \
 --disk=/dev/disk/by-partlabel/la_v_boot_a,label=24,rw=true \
@@ -27,8 +29,8 @@ ExecStart=/usr/bin/qcrosvm \
 --disk=/dev/disk/by-partlabel/bluetooth_b,label=2D,rw=false \
 --disk=/dev/disk/by-partlabel/modem_a,label=2E,rw=false \
 --disk=/dev/disk/by-partlabel/modem_b,label=2F,rw=false \
---disk=/dev/disk/by-partlabel/vbmeta_a,label=30,rw=false \
---disk=/dev/disk/by-partlabel/vbmeta_b,label=31,rw=false \
+--disk=/dev/disk/by-partlabel/la_vbmeta_a,label=30,rw=true \
+--disk=/dev/disk/by-partlabel/la_vbmeta_b,label=31,rw=true \
 --disk=/dev/disk/by-partlabel/la_misc,label=32,rw=true \
 --disk=/dev/disk/by-partlabel/la_persist,label=33,rw=true \
 --disk=/dev/disk/by-partlabel/la_metadata,label=34,rw=true \
@@ -41,7 +43,7 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-hab "/tmp/linux-vm2-aud-skt",label=3B,device-id=91,queue-num=8 \
 --vhost-user-hab "/tmp/linux-vm2-vid-skt",label=3D,device-id=95,queue-num=6 \
 --vhost-user-hab "/tmp/linux-vm2-cam-skt",label=3E,device-id=92,queue-num=4 \
---input=/dev/input/event0,label=3F \
+--input=/dev/input/event1,label=3F \
 --input=/dev/input/vmm-pwr-key,label=40
 
 [Install]
