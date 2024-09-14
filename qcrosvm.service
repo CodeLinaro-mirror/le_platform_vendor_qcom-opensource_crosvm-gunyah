@@ -8,6 +8,7 @@ After=display-be.service gsl_hab_server.service vhost-user-misc.service audio-um
 # List of device unit dependencies
 Requires=dev-input-vmm\x2dpwr\x2dkey.device
 After=dev-input-vmm\x2dpwr\x2dkey.device
+Wants=gvm_net_config.service
 
 [Service]
 Type=simple
