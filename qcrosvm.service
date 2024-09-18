@@ -3,8 +3,8 @@
 [Unit]
 Description=Service to start the Android GVM
 # List of service unit dependencies
-Requires=display-be.service gsl_hab_server.service vhost-user-misc.service hyp-video-be.service qcx_be_server.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service
-After=display-be.service gsl_hab_server.service vhost-user-misc.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service
+Requires=display-be.service gsl_hab_server.service vhost-user-misc.service hyp-video-be.service qcx_be_server.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service vhost-user-scmi.service
+After=display-be.service gsl_hab_server.service vhost-user-misc.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service vhost-user-scmi.service
 # List of device unit dependencies
 Requires=dev-input-vmm\x2dpwr\x2dkey.device
 After=dev-input-vmm\x2dpwr\x2dkey.device
@@ -44,6 +44,7 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-hab "/tmp/linux-vm2-aud-skt",label=3B,device-id=91,queue-num=8 \
 --vhost-user-hab "/tmp/linux-vm2-vid-skt",label=3D,device-id=95,queue-num=6 \
 --vhost-user-hab "/tmp/linux-vm2-cam-skt",label=3E,device-id=92,queue-num=4 \
+--vhost-user-scmi "/tmp/pt-dev-skt",label=42 \
 --vhost-user-gp /tmp/gp_hello,label=44 \
 --vhost-user-frpc "/tmp/sock_file_frpc",label=45 \
 --input=/dev/input/event1,label=3F \
