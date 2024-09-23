@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: BSD-3-Clause-Clear
 [Unit]
 Description=Service to start the Android GVM
+# List of service unit dependencies
+Requires=display-be.service gsl_hab_server.service vhost-user-misc.service hyp-video-be.service qcx_be_server.service
+After=display-be.service gsl_hab_server.service vhost-user-misc.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service
 
 [Service]
 Type=simple
