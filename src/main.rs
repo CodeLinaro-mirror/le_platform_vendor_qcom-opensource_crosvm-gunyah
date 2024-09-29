@@ -56,7 +56,7 @@ use base::{ioctl_with_val, ioctl_io_nr, ioctl_with_ref, ioctl_with_mut_ref, ioct
 use vhost::NetT;
 use virtio_sys;
 static VHOST_NET_PATH: &str = "/dev/vhost-net";
-static DEF_SERIAL_FILE: &str = "/tmp/la_gvm.log";
+static DEF_SERIAL_FILE: &str = "/tmp/la_gvm.txt";
 
 // Logging
 #[macro_use]
