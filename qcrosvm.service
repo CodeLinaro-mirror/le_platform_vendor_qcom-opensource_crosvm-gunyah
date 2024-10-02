@@ -45,7 +45,8 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-hab "/tmp/linux-vm2-vid-skt",label=3D,device-id=95,queue-num=6 \
 --vhost-user-hab "/tmp/linux-vm2-cam-skt",label=3E,device-id=92,queue-num=4 \
 --input=/dev/input/event1,label=3F \
---input=/dev/input/vmm-pwr-key,label=40
+--input=/dev/input/vmm-pwr-key,label=40 \
+--console=/tmp/la_gvm.txt,label=41
 
 [Install]
 WantedBy = multi-user.target
