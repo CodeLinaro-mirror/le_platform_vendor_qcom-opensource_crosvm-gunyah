@@ -1,0 +1,25 @@
+# Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+[Unit]
+Description=Service to start the Linux GVM
+# List of service unit dependencies
+Requires=qcrosvm.service
+After=qcrosvm.service
+
+[Service]
+Type=simple
+ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b00 /firmware/vm/boot/autoghgvmlv.b00
+ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b01 /firmware/vm/boot/autoghgvmlv.b01
+ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b02 /firmware/vm/boot/autoghgvmlv.b02
+ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b03 /firmware/vm/boot/autoghgvmlv.b03
+ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.mdt /firmware/vm/boot/autoghgvmlv.mdt
+ExecStart=/usr/bin/qcrosvm \
+--vm=autoghgvmlv \
+--disk=/dev/disk/by-partlabel/lv_persist,label=51,rw=true \
+--disk=/dev/disk/by-partlabel/lv_userdata,label=52,rw=true \
+--disk=/dev/disk/by-partlabel/lv_system_a,label=53,rw=true \
+--net=true,label=55,ip_addr=10.10.10.18,netmask=255.255.255.0,mac=5A:6F:66:05:FF:25 \
+--use-non-protected-virtio
+
+[Install]
+WantedBy = multi-user.target
