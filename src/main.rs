@@ -42,7 +42,7 @@ use std::convert::TryInto;
 use devices::virtio::block::block::DiskOption;
 use devices::virtio::vhost::user::vmm::{
     Hab as VhostUserHab, Scmi as VhostUserScmi, I2cAdapter as VhostUserI2cAdapter,
-    GlinkPassthrough as VhostUserGP, Frpc as VhostUserfrpc
+    GlinkPassthrough as VhostUserGP, Frpc as VhostUserfrpc, Ssr as VhostUserSsr,
 };
 
 use crosvm::{
@@ -1621,6 +1621,120 @@ impl DeviceTrait for VuVirtiofrpcDevices {
     }
 }
 
+////// VU_VIRTIO_SSR //////
+struct VuVirtioSsr {
+    label: u32,
+    mmio: Option<MmioDevice>,
+    config_space: Option<Vec<u32>>,
+    vhost_user_ssr: VhostUserOption,
+}
+
+struct VuVirtioSsrDevices {
+    vussr_devices: Vec<VuVirtioSsr>,
+}
+
+impl VuVirtioSsrDevices {
+    pub fn new() -> Self {
+        VuVirtioSsrDevices {
+            vussr_devices: Vec::new()
+        }
+    }
+
+    pub fn create_vussr_devices(&mut self, cfg: &mut BackendConfig) -> Result<(), BackendError> {
+        for vssr in &mut self.vussr_devices {
+            let mem = cfg.mem.as_ref().expect(&format!("{}:{}", file!(), line!()));
+            let sfd: &SafeDescriptor;
+            match cfg.driver_variant {
+                1 => {sfd = cfg.sfd.as_ref().expect(&format!("{}:{}", file!(), line!()))}
+                2 => {sfd = cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!()))}
+                _ => return Err(BackendError::StrError(String::from("Unsupported driver variant.")))
+            };
+            let vussrdev = VhostUserSsr::new(virtio::base_features(ProtectionType::Unprotected), &vssr.vhost_user_ssr.socket)
+                    .map_err(|_| BackendError::StrError(String::from("vhost user ssr new failed")))?;
+            vssr.mmio = Some(MmioDevice::new(mem.clone(), Box::new(vussrdev)).expect(&format!("{}:{}", file!(), line!())));
+            mmio_handle(&vssr.mmio, vssr.label, sfd, cfg)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl DeviceTrait for VuVirtioSsrDevices {
+    fn create_and_run_devices(&mut self, cfg: &mut BackendConfig) -> Result<Vec<JoinHandle<()>>, ()> {
+        let handles = create_device_threads!(
+            self,
+            cfg,
+            &mut self.vussr_devices,
+            VuVirtioSsrDevices::create_vussr_devices,
+            init_config_space
+        );
+        Ok(handles)
+    }
+
+    fn set_argument(&mut self, value: Option<&str>) -> argument::Result<()> {
+        let mut vssr = VuVirtioSsr{label: 0,mmio: None,config_space: Some(Vec::new()),vhost_user_ssr: VhostUserOption {
+                                                    socket: PathBuf::new()}};
+        let param = value.expect(&format!("{}:{}", file!(), line!()));
+        let mut components = param.split(',');
+        let vu = VhostUserOption {
+            socket: PathBuf::from(
+                components.next()
+                        .ok_or_else(|| argument::Error::InvalidValue {
+                            value: param.to_owned(),
+                            expected: String::from("missing vhost user ssr sock path"),
+                        })?,
+                ),
+        };
+        vssr.vhost_user_ssr = vu;
+
+        if !vssr.vhost_user_ssr.socket.exists() {
+            return Err(argument::Error::InvalidValue {
+                value: param.to_owned(),
+                expected: String::from("vhost-user-ssr socket path must an existing path"),
+            });
+        }
+        for opt in components {
+            let mut o = opt.splitn(2,'=');
+                let kind = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                    value: opt.to_owned(),
+                    expected: String::from("vhost-user-ssr options must not be empty"),
+                })?;
+
+                let value = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                    value: opt.to_owned(),
+                    expected: String::from("vhost-user-ssr options must be of the form `kind=value`"),
+                })?;
+
+                match kind {
+                    "label" => {
+                        let label: u32 = u32::from_str_radix(value, 16)
+                            .map_err(|_| argument::Error::InvalidValue {
+                                value: value.to_owned(),
+                                expected: String::from("`label` must be an unsigned integer"),
+                            })?;
+                        if label == 0 {
+                            return Err(argument::Error::InvalidValue {
+                                value: value.to_owned(),
+                                expected: String::from("`label` must be a non zero integer"),
+                            });
+
+                        }
+                        vssr.label = label;
+                    }
+
+                    _ => {
+                        return Err(argument::Error::InvalidValue {
+                            value: kind.to_owned(),
+                            expected: String::from("vhost-user-ssr only supports label"),
+                        });
+                    }
+                }
+            }
+        self.vussr_devices.push(vssr);
+        Ok(())
+    }
+}
+
 ////// VCPU //////
 struct Vcpu {
     id: u8,
@@ -1989,6 +2103,7 @@ struct VMBackend {
     vhab_devices: VirtioHabDevices,
     vinput_devices: VirtioInputDevices,
     vconsole_devices: VirtioConsoleDevices,
+    vuvirtio_ssr_devices: VuVirtioSsrDevices,
     vsock_devices: VirtioSockDevices,
 }
 
@@ -2007,6 +2122,7 @@ impl VMBackend {
             vhab_devices: VirtioHabDevices::new(),
             vinput_devices: VirtioInputDevices::new(),
             vconsole_devices: VirtioConsoleDevices::new(),
+            vuvirtio_ssr_devices: VuVirtioSsrDevices::new(),
             vsock_devices: VirtioSockDevices::new(),
         }
     }
@@ -2106,6 +2222,10 @@ impl VMBackend {
             "vhost-user-frpc" => {
                 self.cfg.bkend_dev_exist = true;
                 self.vuvirtio_frpc_devices.set_argument(value)?
+            }
+            "vhost-user-ssr" => {
+                self.cfg.bkend_dev_exist = true;
+                self.vuvirtio_ssr_devices.set_argument(value)?
             }
             "vhost-user-hab" => {
                 self.cfg.bkend_dev_exist = true;
@@ -2275,6 +2395,7 @@ impl VMBackend {
             &mut self.vuvirtio_i2c_devices,
             &mut self.vugp_devices,
             &mut self.vuvirtio_frpc_devices,
+            &mut self.vuvirtio_ssr_devices,
             &mut self.vsock_devices,
             &mut self.vcpus,    // vCPU create and run at the end
         ];
@@ -2529,6 +2650,7 @@ fn print_usage() {
     [--vhost-user-i2c SOCKET_PATH,label=LABEL]
     [--vhost-user-scmi SOCKET_PATH,label=LABEL]
     [--vhost-user-frpc SOCKET_PATH,label=LABEL]
+    [--vhost-user-ssr SOCKET_PATH,label=LABEL]
     [--console PATH,label=LABEL]
     [--vsock label=LABEL,cid=CONTEXT_ID]
     --vm=VMNAME");
@@ -2989,6 +3111,7 @@ fn parse_and_run(args: std::env::Args) -> Result<(), ()> {
         Argument::value("vhost-user-scmi", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::value("vhost-user-i2c", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::value("vhost-user-frpc", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
+        Argument::value("vhost-user-ssr", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::short_value('n',"net","label=LABEL[,key=value[,key=value[,key=value[,...]]]]","net device followed by comma-separated options.
                             Valid keys:
                             label=LABEL - Indicates the label associated with the virtual net dev
