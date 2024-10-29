@@ -31,7 +31,7 @@ use devices::serial_device::{SerialHardware, SerialParameters, SerialType};
 use hypervisor::{ProtectionType};
 use mmio::MmioDevice;
 use mmio::DEVICE_RESET;
-use devices::virtio::vhost::Scmi;
+use devices::virtio::vhost::{Scmi, Vsock, vsock::VhostVsockConfig};
 
 use base::{pagesize, AsRawDescriptor};
 use base::{info, error, debug, Event, RawDescriptor, syslog};
@@ -55,6 +55,7 @@ use vhost::NetT;
 use virtio_sys;
 static VHOST_NET_PATH: &str = "/dev/vhost-net";
 static DEF_SERIAL_FILE: &str = "/tmp/la_gvm.txt";
+static VSOCK_PATH: &str = "/dev/vhost-vsock";
 
 // Logging
 #[macro_use]
@@ -1817,6 +1818,127 @@ impl DeviceTrait for ScmiDevices {
     }
 }
 
+///// VSOCK DEVICE /////
+struct VirtioSock {
+    context_id: u64,
+    vhost_vsock_path: PathBuf,
+    label: u32,
+    mmio: Option<MmioDevice>,
+    config_space: Option<Vec<u32>>,
+}
+
+impl VirtioSock {
+    fn new() -> Self {
+        VirtioSock {
+            context_id: 0,
+            vhost_vsock_path: PathBuf::from(VSOCK_PATH),
+            label: 0,
+            mmio: None,
+            config_space: Some(Vec::new())
+        }
+    }
+}
+struct VirtioSockDevices {
+    v_sock_devices: Vec<VirtioSock>,
+}
+
+impl VirtioSockDevices {
+    pub fn new() -> Self {
+        VirtioSockDevices { v_sock_devices: Vec::new(), }
+    }
+
+    fn create_vsock_devices(&mut self, cfg: &mut BackendConfig) -> std::result::Result<(), BackendError> {
+
+        for vsock in &mut self.v_sock_devices {
+            let mem = cfg.mem.as_ref().expect(&format!("{}:{}", file!(), line!()));
+            let sfd :&SafeDescriptor;
+
+            match cfg.driver_variant {
+                1 => {sfd = cfg.sfd.as_ref().expect(&format!("{}:{}", file!(), line!()));}
+                2 => {sfd = cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!()));}
+                _ => return Err(BackendError::StrError(String::from("Unsupported driver variant.")))
+            };
+
+            let v_sock_device = Vsock::new(
+                virtio::base_features(ProtectionType::Unprotected),
+                &VhostVsockConfig{
+                    device: virtio::vhost::vsock::VhostVsockDeviceParameter::Path(vsock.vhost_vsock_path.clone()),
+                    cid: vsock.context_id
+                }
+            );
+
+            vsock.mmio = Some(MmioDevice::new(mem.clone(), Box::new(v_sock_device.expect(&format!("{}:{}", file!(), line!())))).expect(&format!("{}:{}", file!(), line!())));
+            mmio_handle(&vsock.mmio, vsock.label, sfd, cfg);
+        }
+        Ok(())
+    }
+}
+impl DeviceTrait for VirtioSockDevices {
+    fn create_and_run_devices(&mut self, cfg: &mut BackendConfig) -> Result<Vec<JoinHandle<()>>, ()> {
+        let handles = create_device_threads!(
+            self,
+            cfg,
+            &mut self.v_sock_devices,
+            VirtioSockDevices::create_vsock_devices,
+            init_config_space
+        );
+        Ok(handles)
+    }
+
+    fn set_argument(&mut self, value: Option<&str>) -> argument::Result<()> {
+
+        let mut vsock = VirtioSock::new();
+
+        let param = value.expect(&format!("{}:{}", file!(), line!()));
+        let mut components = param.split(',');
+
+        for opt in components {
+            let mut o = opt.splitn(2, '=');
+            let kind = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                value: opt.to_owned(),
+                expected: String::from("vsock cid must be present"),
+            })?;
+
+            let value = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                value: opt.to_owned(),
+                expected: String::from("vsock cid must be of the form `cid=value`")
+            })?;
+
+            match kind {
+                "cid" => {
+                    vsock.context_id = value.parse().map_err(|_| argument::Error::InvalidValue {
+                        value: value.to_owned(),
+                        expected: String::from("context id must be an integer")
+                    })?;
+                }
+                "label" => {
+                    let label = u32::from_str_radix(value, 16)
+                        .map_err(|_| argument::Error::InvalidValue {
+                            value: value.to_owned(),
+                            expected: String::from("`label must be an unsigned integer`")
+                        })?;
+                    if label == 0 {
+                        return Err(argument::Error::InvalidValue {
+                            value: value.to_owned(),
+                            expected: String::from("`label` must be a non-zero integer"),
+                        });
+                    }
+                    vsock.label = label;
+                }
+                _ => {
+                    return Err(argument::Error::InvalidValue {
+                        value: kind.to_owned(),
+                        expected: String::from("supported vsock options are cid and label"),
+                    });
+                }
+            }
+        }
+
+        self.v_sock_devices.push(vsock);
+        Ok(())
+    }
+}
+
 /// Aggregate of all configurable options for a block device
 struct BackendConfig {
     sfd: Option<SafeDescriptor>,
@@ -1867,6 +1989,7 @@ struct VMBackend {
     vhab_devices: VirtioHabDevices,
     vinput_devices: VirtioInputDevices,
     vconsole_devices: VirtioConsoleDevices,
+    vsock_devices: VirtioSockDevices,
 }
 
 impl VMBackend {
@@ -1884,6 +2007,7 @@ impl VMBackend {
             vhab_devices: VirtioHabDevices::new(),
             vinput_devices: VirtioInputDevices::new(),
             vconsole_devices: VirtioConsoleDevices::new(),
+            vsock_devices: VirtioSockDevices::new(),
         }
     }
 
@@ -1994,6 +2118,10 @@ impl VMBackend {
             "console" => {
                 self.cfg.bkend_dev_exist = true;
                 self.vconsole_devices.set_argument(value)?
+            }
+            "vsock" => {
+                self.cfg.bkend_dev_exist = true;
+                self.vsock_devices.set_argument(value)?
             }
             _ => unreachable!(),
         }
@@ -2147,6 +2275,7 @@ impl VMBackend {
             &mut self.vuvirtio_i2c_devices,
             &mut self.vugp_devices,
             &mut self.vuvirtio_frpc_devices,
+            &mut self.vsock_devices,
             &mut self.vcpus,    // vCPU create and run at the end
         ];
 
@@ -2401,6 +2530,7 @@ fn print_usage() {
     [--vhost-user-scmi SOCKET_PATH,label=LABEL]
     [--vhost-user-frpc SOCKET_PATH,label=LABEL]
     [--console PATH,label=LABEL]
+    [--vsock label=LABEL,cid=CONTEXT_ID]
     --vm=VMNAME");
     println!("\n[-l] or [--log=[level=trace|debug|info|warn|error],[type=ftrace|logcat|term]]");
     println!("Default logger level: info");
@@ -2870,6 +3000,7 @@ fn parse_and_run(args: std::env::Args) -> Result<(), ()> {
         Argument::short_value('i', "input", "PATH,label=LABEL[,key=value[,key=value[,...]]", "Path to a input device followed by comma-separated option label=LABEL."),
         Argument::value("console", "PATH,label=LABEL", "stdout or Path to a log file followed by comma-separated option label=LABEL"),
         Argument::value("vhost-user-gp", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
+        Argument::value("vsock", "label=LABEL[,key=value", "label=LABEL,cid=context-id"),
         ];
 
     let mut vm = VMBackend::new();
