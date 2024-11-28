@@ -20,7 +20,7 @@ ExecStart=/usr/bin/qcrosvm \
 --disk=/dev/disk/by-partlabel/lv_persist,label=10F,rw=true \
 --disk=/dev/disk/by-partlabel/lv_userdata,label=111,rw=true \
 --disk=/dev/disk/by-partlabel/lv_system_a,label=112,rw=true \
---net=true,label=114,ip_addr=10.10.10.18,netmask=255.255.255.0,mac=5A:6F:66:05:FF:25 \
+--net=true,label=114,ip_addr=10.10.10.18,netmask=255.255.255.0,mac=5A:6F:66:05:FF:25,tapName=1 \
 --vhost-user-hab "/tmp/linux-vm3-disp-skt",label=119,device-id=93,queue-num=10 \
 --vhost-user-hab "/tmp/linux-vm3-ogles-skt",label=116,device-id=94,queue-num=2 \
 --vhost-user-hab "/tmp/linux-vm3-misc-skt",label=117,device-id=90,queue-num=2 \
