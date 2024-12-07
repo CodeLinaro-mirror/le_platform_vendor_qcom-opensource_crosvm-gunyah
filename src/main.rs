@@ -10,6 +10,7 @@ use std::default::Default;
 use std::path::{Path, PathBuf};
 use std::string::String;
 use std::fs::{File, OpenOptions};
+use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::{RawFd, FromRawFd};
 use std::thread;
 use std::io;
@@ -234,13 +235,15 @@ impl VirtioDisk {
             // Safe because we will validate |raw_fd|.
             unsafe {File::from_raw_fd(raw_fd_from_path(&self.disk.path).map_err(|_| BackendError::StrError(String::from("raw_fd_from_path failed")))?)}
         } else {
-            OpenOptions::new()
-                .read(true)
-                .write(!self.disk.read_only)
-                .open(&self.disk.path).map_err(|_| BackendError::StrNumError {
-                    err: String::from("open of disk file failed"),
-                    val: io::Error::last_os_error(),
-                })?
+            let mut options = OpenOptions::new();
+            options.read(true).write(!self.disk.read_only);
+            if self.disk.o_direct {
+              options.custom_flags(libc::O_DIRECT);
+            }
+            options.open(&self.disk.path).map_err(|_| BackendError::StrNumError {
+              err: String::from("open of disk file failed"),
+              val: io::Error::last_os_error(),
+            })?
         };
 
         // Lock the disk image to prevent other crosvm instances from using it.
@@ -399,6 +402,13 @@ impl DeviceTrait for VirtioDiskDevices {
                     })?;
                     vdisk.disk.read_only = !rwrite;
                 }
+                "dio" => {
+                  let direct_io: bool = value.parse().map_err(|_| argument::Error::InvalidValue {
+                      value: value.to_owned(),
+                      expected: String::from("`dio` must be a boolean"),
+                  })?;
+                  vdisk.disk.o_direct = direct_io;
+              }
                 _ => {
                     return Err(argument::Error::InvalidValue {
                         value: kind.to_owned(),
