@@ -10,6 +10,7 @@ use std::default::Default;
 use std::path::{Path, PathBuf};
 use std::string::String;
 use std::fs::{File, OpenOptions};
+use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::{RawFd, FromRawFd};
 use std::thread;
 use std::io;
@@ -31,7 +32,7 @@ use devices::serial_device::{SerialHardware, SerialParameters, SerialType};
 use hypervisor::{ProtectionType};
 use mmio::MmioDevice;
 use mmio::DEVICE_RESET;
-use devices::virtio::vhost::Scmi;
+use devices::virtio::vhost::{Scmi, Vsock, vsock::VhostVsockConfig};
 
 use base::{pagesize, AsRawDescriptor};
 use base::{info, error, debug, Event, RawDescriptor, syslog};
@@ -42,7 +43,7 @@ use std::convert::TryInto;
 use devices::virtio::block::block::DiskOption;
 use devices::virtio::vhost::user::vmm::{
     Hab as VhostUserHab, Scmi as VhostUserScmi, I2cAdapter as VhostUserI2cAdapter,
-    GlinkPassthrough as VhostUserGP, Frpc as VhostUserfrpc
+    GlinkPassthrough as VhostUserGP, Frpc as VhostUserfrpc, Ssr as VhostUserSsr,
 };
 
 use crosvm::{
@@ -55,6 +56,7 @@ use vhost::NetT;
 use virtio_sys;
 static VHOST_NET_PATH: &str = "/dev/vhost-net";
 static DEF_SERIAL_FILE: &str = "/tmp/la_gvm.txt";
+static VSOCK_PATH: &str = "/dev/vhost-vsock";
 
 // Logging
 #[macro_use]
@@ -233,13 +235,15 @@ impl VirtioDisk {
             // Safe because we will validate |raw_fd|.
             unsafe {File::from_raw_fd(raw_fd_from_path(&self.disk.path).map_err(|_| BackendError::StrError(String::from("raw_fd_from_path failed")))?)}
         } else {
-            OpenOptions::new()
-                .read(true)
-                .write(!self.disk.read_only)
-                .open(&self.disk.path).map_err(|_| BackendError::StrNumError {
-                    err: String::from("open of disk file failed"),
-                    val: io::Error::last_os_error(),
-                })?
+            let mut options = OpenOptions::new();
+            options.read(true).write(!self.disk.read_only);
+            if self.disk.o_direct {
+              options.custom_flags(libc::O_DIRECT);
+            }
+            options.open(&self.disk.path).map_err(|_| BackendError::StrNumError {
+              err: String::from("open of disk file failed"),
+              val: io::Error::last_os_error(),
+            })?
         };
 
         // Lock the disk image to prevent other crosvm instances from using it.
@@ -398,6 +402,13 @@ impl DeviceTrait for VirtioDiskDevices {
                     })?;
                     vdisk.disk.read_only = !rwrite;
                 }
+                "dio" => {
+                  let direct_io: bool = value.parse().map_err(|_| argument::Error::InvalidValue {
+                      value: value.to_owned(),
+                      expected: String::from("`dio` must be a boolean"),
+                  })?;
+                  vdisk.disk.o_direct = direct_io;
+              }
                 _ => {
                     return Err(argument::Error::InvalidValue {
                         value: kind.to_owned(),
@@ -1620,6 +1631,120 @@ impl DeviceTrait for VuVirtiofrpcDevices {
     }
 }
 
+////// VU_VIRTIO_SSR //////
+struct VuVirtioSsr {
+    label: u32,
+    mmio: Option<MmioDevice>,
+    config_space: Option<Vec<u32>>,
+    vhost_user_ssr: VhostUserOption,
+}
+
+struct VuVirtioSsrDevices {
+    vussr_devices: Vec<VuVirtioSsr>,
+}
+
+impl VuVirtioSsrDevices {
+    pub fn new() -> Self {
+        VuVirtioSsrDevices {
+            vussr_devices: Vec::new()
+        }
+    }
+
+    pub fn create_vussr_devices(&mut self, cfg: &mut BackendConfig) -> Result<(), BackendError> {
+        for vssr in &mut self.vussr_devices {
+            let mem = cfg.mem.as_ref().expect(&format!("{}:{}", file!(), line!()));
+            let sfd: &SafeDescriptor;
+            match cfg.driver_variant {
+                1 => {sfd = cfg.sfd.as_ref().expect(&format!("{}:{}", file!(), line!()))}
+                2 => {sfd = cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!()))}
+                _ => return Err(BackendError::StrError(String::from("Unsupported driver variant.")))
+            };
+            let vussrdev = VhostUserSsr::new(virtio::base_features(ProtectionType::Unprotected), &vssr.vhost_user_ssr.socket)
+                    .map_err(|_| BackendError::StrError(String::from("vhost user ssr new failed")))?;
+            vssr.mmio = Some(MmioDevice::new(mem.clone(), Box::new(vussrdev)).expect(&format!("{}:{}", file!(), line!())));
+            mmio_handle(&vssr.mmio, vssr.label, sfd, cfg)?;
+        }
+
+        Ok(())
+    }
+}
+
+impl DeviceTrait for VuVirtioSsrDevices {
+    fn create_and_run_devices(&mut self, cfg: &mut BackendConfig) -> Result<Vec<JoinHandle<()>>, ()> {
+        let handles = create_device_threads!(
+            self,
+            cfg,
+            &mut self.vussr_devices,
+            VuVirtioSsrDevices::create_vussr_devices,
+            init_config_space
+        );
+        Ok(handles)
+    }
+
+    fn set_argument(&mut self, value: Option<&str>) -> argument::Result<()> {
+        let mut vssr = VuVirtioSsr{label: 0,mmio: None,config_space: Some(Vec::new()),vhost_user_ssr: VhostUserOption {
+                                                    socket: PathBuf::new()}};
+        let param = value.expect(&format!("{}:{}", file!(), line!()));
+        let mut components = param.split(',');
+        let vu = VhostUserOption {
+            socket: PathBuf::from(
+                components.next()
+                        .ok_or_else(|| argument::Error::InvalidValue {
+                            value: param.to_owned(),
+                            expected: String::from("missing vhost user ssr sock path"),
+                        })?,
+                ),
+        };
+        vssr.vhost_user_ssr = vu;
+
+        if !vssr.vhost_user_ssr.socket.exists() {
+            return Err(argument::Error::InvalidValue {
+                value: param.to_owned(),
+                expected: String::from("vhost-user-ssr socket path must an existing path"),
+            });
+        }
+        for opt in components {
+            let mut o = opt.splitn(2,'=');
+                let kind = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                    value: opt.to_owned(),
+                    expected: String::from("vhost-user-ssr options must not be empty"),
+                })?;
+
+                let value = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                    value: opt.to_owned(),
+                    expected: String::from("vhost-user-ssr options must be of the form `kind=value`"),
+                })?;
+
+                match kind {
+                    "label" => {
+                        let label: u32 = u32::from_str_radix(value, 16)
+                            .map_err(|_| argument::Error::InvalidValue {
+                                value: value.to_owned(),
+                                expected: String::from("`label` must be an unsigned integer"),
+                            })?;
+                        if label == 0 {
+                            return Err(argument::Error::InvalidValue {
+                                value: value.to_owned(),
+                                expected: String::from("`label` must be a non zero integer"),
+                            });
+
+                        }
+                        vssr.label = label;
+                    }
+
+                    _ => {
+                        return Err(argument::Error::InvalidValue {
+                            value: kind.to_owned(),
+                            expected: String::from("vhost-user-ssr only supports label"),
+                        });
+                    }
+                }
+            }
+        self.vussr_devices.push(vssr);
+        Ok(())
+    }
+}
+
 ////// VCPU //////
 struct Vcpu {
     id: u8,
@@ -1817,6 +1942,127 @@ impl DeviceTrait for ScmiDevices {
     }
 }
 
+///// VSOCK DEVICE /////
+struct VirtioSock {
+    context_id: u64,
+    vhost_vsock_path: PathBuf,
+    label: u32,
+    mmio: Option<MmioDevice>,
+    config_space: Option<Vec<u32>>,
+}
+
+impl VirtioSock {
+    fn new() -> Self {
+        VirtioSock {
+            context_id: 0,
+            vhost_vsock_path: PathBuf::from(VSOCK_PATH),
+            label: 0,
+            mmio: None,
+            config_space: Some(Vec::new())
+        }
+    }
+}
+struct VirtioSockDevices {
+    v_sock_devices: Vec<VirtioSock>,
+}
+
+impl VirtioSockDevices {
+    pub fn new() -> Self {
+        VirtioSockDevices { v_sock_devices: Vec::new(), }
+    }
+
+    fn create_vsock_devices(&mut self, cfg: &mut BackendConfig) -> std::result::Result<(), BackendError> {
+
+        for vsock in &mut self.v_sock_devices {
+            let mem = cfg.mem.as_ref().expect(&format!("{}:{}", file!(), line!()));
+            let sfd :&SafeDescriptor;
+
+            match cfg.driver_variant {
+                1 => {sfd = cfg.sfd.as_ref().expect(&format!("{}:{}", file!(), line!()));}
+                2 => {sfd = cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!()));}
+                _ => return Err(BackendError::StrError(String::from("Unsupported driver variant.")))
+            };
+
+            let v_sock_device = Vsock::new(
+                virtio::base_features(ProtectionType::Unprotected),
+                &VhostVsockConfig{
+                    device: virtio::vhost::vsock::VhostVsockDeviceParameter::Path(vsock.vhost_vsock_path.clone()),
+                    cid: vsock.context_id
+                }
+            );
+
+            vsock.mmio = Some(MmioDevice::new(mem.clone(), Box::new(v_sock_device.expect(&format!("{}:{}", file!(), line!())))).expect(&format!("{}:{}", file!(), line!())));
+            mmio_handle(&vsock.mmio, vsock.label, sfd, cfg);
+        }
+        Ok(())
+    }
+}
+impl DeviceTrait for VirtioSockDevices {
+    fn create_and_run_devices(&mut self, cfg: &mut BackendConfig) -> Result<Vec<JoinHandle<()>>, ()> {
+        let handles = create_device_threads!(
+            self,
+            cfg,
+            &mut self.v_sock_devices,
+            VirtioSockDevices::create_vsock_devices,
+            init_config_space
+        );
+        Ok(handles)
+    }
+
+    fn set_argument(&mut self, value: Option<&str>) -> argument::Result<()> {
+
+        let mut vsock = VirtioSock::new();
+
+        let param = value.expect(&format!("{}:{}", file!(), line!()));
+        let mut components = param.split(',');
+
+        for opt in components {
+            let mut o = opt.splitn(2, '=');
+            let kind = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                value: opt.to_owned(),
+                expected: String::from("vsock cid must be present"),
+            })?;
+
+            let value = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                value: opt.to_owned(),
+                expected: String::from("vsock cid must be of the form `cid=value`")
+            })?;
+
+            match kind {
+                "cid" => {
+                    vsock.context_id = value.parse().map_err(|_| argument::Error::InvalidValue {
+                        value: value.to_owned(),
+                        expected: String::from("context id must be an integer")
+                    })?;
+                }
+                "label" => {
+                    let label = u32::from_str_radix(value, 16)
+                        .map_err(|_| argument::Error::InvalidValue {
+                            value: value.to_owned(),
+                            expected: String::from("`label must be an unsigned integer`")
+                        })?;
+                    if label == 0 {
+                        return Err(argument::Error::InvalidValue {
+                            value: value.to_owned(),
+                            expected: String::from("`label` must be a non-zero integer"),
+                        });
+                    }
+                    vsock.label = label;
+                }
+                _ => {
+                    return Err(argument::Error::InvalidValue {
+                        value: kind.to_owned(),
+                        expected: String::from("supported vsock options are cid and label"),
+                    });
+                }
+            }
+        }
+
+        self.v_sock_devices.push(vsock);
+        Ok(())
+    }
+}
+
 /// Aggregate of all configurable options for a block device
 struct BackendConfig {
     sfd: Option<SafeDescriptor>,
@@ -1867,6 +2113,8 @@ struct VMBackend {
     vhab_devices: VirtioHabDevices,
     vinput_devices: VirtioInputDevices,
     vconsole_devices: VirtioConsoleDevices,
+    vuvirtio_ssr_devices: VuVirtioSsrDevices,
+    vsock_devices: VirtioSockDevices,
 }
 
 impl VMBackend {
@@ -1884,6 +2132,8 @@ impl VMBackend {
             vhab_devices: VirtioHabDevices::new(),
             vinput_devices: VirtioInputDevices::new(),
             vconsole_devices: VirtioConsoleDevices::new(),
+            vuvirtio_ssr_devices: VuVirtioSsrDevices::new(),
+            vsock_devices: VirtioSockDevices::new(),
         }
     }
 
@@ -1983,6 +2233,10 @@ impl VMBackend {
                 self.cfg.bkend_dev_exist = true;
                 self.vuvirtio_frpc_devices.set_argument(value)?
             }
+            "vhost-user-ssr" => {
+                self.cfg.bkend_dev_exist = true;
+                self.vuvirtio_ssr_devices.set_argument(value)?
+            }
             "vhost-user-hab" => {
                 self.cfg.bkend_dev_exist = true;
                 self.vhab_devices.set_argument(value)?
@@ -1994,6 +2248,10 @@ impl VMBackend {
             "console" => {
                 self.cfg.bkend_dev_exist = true;
                 self.vconsole_devices.set_argument(value)?
+            }
+            "vsock" => {
+                self.cfg.bkend_dev_exist = true;
+                self.vsock_devices.set_argument(value)?
             }
             _ => unreachable!(),
         }
@@ -2147,6 +2405,8 @@ impl VMBackend {
             &mut self.vuvirtio_i2c_devices,
             &mut self.vugp_devices,
             &mut self.vuvirtio_frpc_devices,
+            &mut self.vuvirtio_ssr_devices,
+            &mut self.vsock_devices,
             &mut self.vcpus,    // vCPU create and run at the end
         ];
 
@@ -2400,7 +2660,9 @@ fn print_usage() {
     [--vhost-user-i2c SOCKET_PATH,label=LABEL]
     [--vhost-user-scmi SOCKET_PATH,label=LABEL]
     [--vhost-user-frpc SOCKET_PATH,label=LABEL]
+    [--vhost-user-ssr SOCKET_PATH,label=LABEL]
     [--console PATH,label=LABEL]
+    [--vsock label=LABEL,cid=CONTEXT_ID]
     --vm=VMNAME");
     println!("\n[-l] or [--log=[level=trace|debug|info|warn|error],[type=ftrace|logcat|term]]");
     println!("Default logger level: info");
@@ -2859,6 +3121,7 @@ fn parse_and_run(args: std::env::Args) -> Result<(), ()> {
         Argument::value("vhost-user-scmi", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::value("vhost-user-i2c", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::value("vhost-user-frpc", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
+        Argument::value("vhost-user-ssr", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::short_value('n',"net","label=LABEL[,key=value[,key=value[,key=value[,...]]]]","net device followed by comma-separated options.
                             Valid keys:
                             label=LABEL - Indicates the label associated with the virtual net dev
@@ -2870,6 +3133,7 @@ fn parse_and_run(args: std::env::Args) -> Result<(), ()> {
         Argument::short_value('i', "input", "PATH,label=LABEL[,key=value[,key=value[,...]]", "Path to a input device followed by comma-separated option label=LABEL."),
         Argument::value("console", "PATH,label=LABEL", "stdout or Path to a log file followed by comma-separated option label=LABEL"),
         Argument::value("vhost-user-gp", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
+        Argument::value("vsock", "label=LABEL[,key=value", "label=LABEL,cid=context-id"),
         ];
 
     let mut vm = VMBackend::new();

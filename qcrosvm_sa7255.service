@@ -3,8 +3,8 @@
 [Unit]
 Description=Service to start the Android GVM
 # List of service unit dependencies
-Requires=display-be.service gsl_hab_server.service vhost-user-misc.service hyp-video-be.service qcx_be_server.service
-After=display-be.service gsl_hab_server.service vhost-user-misc.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service
+Requires=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service hyp-video-be.service qcx_be_server.service
+After=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service
 
 [Service]
 Type=simple
@@ -26,8 +26,8 @@ ExecStart=/usr/bin/qcrosvm \
 --disk=/dev/disk/by-partlabel/bluetooth_b,label=2D,rw=false \
 --disk=/dev/disk/by-partlabel/modem_a,label=2E,rw=false \
 --disk=/dev/disk/by-partlabel/modem_b,label=2F,rw=false \
---disk=/dev/disk/by-partlabel/la_vbmeta_a,label=30,rw=false \
---disk=/dev/disk/by-partlabel/la_vbmeta_b,label=31,rw=false \
+--disk=/dev/disk/by-partlabel/la_vbmeta_a,label=30,rw=true \
+--disk=/dev/disk/by-partlabel/la_vbmeta_b,label=31,rw=true \
 --disk=/dev/disk/by-partlabel/la_misc,label=32,rw=true \
 --disk=/dev/disk/by-partlabel/la_persist,label=33,rw=true \
 --disk=/dev/disk/by-partlabel/la_metadata,label=34,rw=true \
