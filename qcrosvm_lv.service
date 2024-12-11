@@ -3,7 +3,7 @@
 [Unit]
 Description=Service to start the Linux GVM
 # List of service unit dependencies
-After=qcrosvm.service
+After=qcrosvm.service vhost-user-scmi-lv.service
 
 [Service]
 Type=simple
@@ -28,6 +28,7 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-hab "/tmp/linux-vm3-vnw-skt",label=11C,device-id=96,queue-num=2 \
 --vhost-user-hab "/tmp/linux-vm3-gpce-skt",label=11D,device-id=98,queue-num=2 \
 --vhost-user-hab "/tmp/linux-vm3-ext-skt",label=11E,device-id=97,queue-num=2 \
+--vhost-user-scmi "/tmp/pt-lv-dev-skt",label=123 \
 --use-non-protected-virtio
 
 [Install]
