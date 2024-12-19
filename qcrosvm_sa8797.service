@@ -1,0 +1,51 @@
+# Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+[Unit]
+Description=Service to start the Android GVM
+# List of service unit dependencies
+Requires=display-be.service gsl_hab_server.service vhost-user-misc.service hyp-video-be.service qcx_be_server.service vmm-pwr-key.service
+After=display-be.service gsl_hab_server.service vhost-user-misc.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service vmm-pwr-key.service
+# List of device unit dependencies
+Requires=dev-input-vmm\x2dpwr\x2dkey.device
+After=dev-input-vmm\x2dpwr\x2dkey.device
+Wants=gvm_net_config.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/qcrosvm \
+--vm=autoghgvm \
+--use-non-protected-virtio \
+--disk=/dev/disk/by-partlabel/la_devinfo,label=21,rw=true \
+--disk=/dev/disk/by-partlabel/la_init_boot_a,label=22,rw=true \
+--disk=/dev/disk/by-partlabel/la_init_boot_b,label=23,rw=true \
+--disk=/dev/disk/by-partlabel/la_v_boot_a,label=24,rw=true \
+--disk=/dev/disk/by-partlabel/la_v_boot_b,label=25,rw=true \
+--disk=/dev/disk/by-partlabel/dsp_a,label=26,rw=false \
+--disk=/dev/disk/by-partlabel/dsp_b,label=27,rw=false \
+--disk=/dev/disk/by-partlabel/la_dtbo_a,label=28,rw=true \
+--disk=/dev/disk/by-partlabel/la_dtbo_b,label=29,rw=true \
+--disk=/dev/disk/by-partlabel/la_boot_a,label=2A,rw=true \
+--disk=/dev/disk/by-partlabel/la_boot_b,label=2B,rw=true \
+--disk=/dev/disk/by-partlabel/bluetooth_a,label=2C,rw=false \
+--disk=/dev/disk/by-partlabel/bluetooth_b,label=2D,rw=false \
+--disk=/dev/disk/by-partlabel/modem_a,label=2E,rw=false \
+--disk=/dev/disk/by-partlabel/modem_b,label=2F,rw=false \
+--disk=/dev/disk/by-partlabel/la_vbmeta_a,label=30,rw=true \
+--disk=/dev/disk/by-partlabel/la_vbmeta_b,label=31,rw=true \
+--disk=/dev/disk/by-partlabel/la_misc,label=32,rw=true \
+--disk=/dev/disk/by-partlabel/la_persist,label=33,rw=true \
+--disk=/dev/disk/by-partlabel/la_metadata,label=34,rw=true \
+--disk=/dev/disk/by-partlabel/la_userdata,label=35,rw=true \
+--disk=/dev/disk/by-partlabel/la_super,label=36,rw=true \
+--net=true,label=38,ip_addr=10.10.10.10,netmask=255.255.255.0,mac=5A:6F:F0:05:7C:24 \
+--vhost-user-hab "/tmp/linux-vm2-disp-skt",label=3C,device-id=93,queue-num=10 \
+--vhost-user-hab "/tmp/linux-vm2-ogles-skt",label=39,device-id=94,queue-num=2 \
+--vhost-user-hab "/tmp/linux-vm2-misc-skt",label=3A,device-id=90,queue-num=2 \
+--vhost-user-hab "/tmp/linux-vm2-aud-skt",label=3B,device-id=91,queue-num=8 \
+--vhost-user-hab "/tmp/linux-vm2-vid-skt",label=3D,device-id=95,queue-num=6 \
+--vhost-user-hab "/tmp/linux-vm2-cam-skt",label=3E,device-id=92,queue-num=4 \
+--input=/dev/input/event1,label=3F \
+--input=/dev/input/vmm-pwr-key,label=40
+
+[Install]
+WantedBy = multi-user.target
