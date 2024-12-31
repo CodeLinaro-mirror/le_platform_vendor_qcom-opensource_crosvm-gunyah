@@ -51,7 +51,7 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-gp /tmp/gp_hello,label=44 \
 --vhost-user-frpc "/tmp/sock_file_frpc",label=45 \
 --vhost-user-ssr "/tmp/linux-vm2-ssr-skt0",label=47 \
---input=/dev/input/event1,label=3F \
+--input=/dev/input/usb1_touchscreen0,label=3F \
 --input=/dev/input/vmm-pwr-key,label=40 \
 --console=/tmp/la_gvm.txt,label=41 \
 --vsock cid=100,label=43
