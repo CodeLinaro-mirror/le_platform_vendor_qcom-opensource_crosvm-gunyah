@@ -3,8 +3,8 @@
 [Unit]
 Description=Service to start the Android GVM
 # List of service unit dependencies
-Requires=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service hyp-video-be.service qcx_be_server.service vhost-user-scmi.service vhost-device-ssr.service
-After=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service vhost-user-scmi.service vhost-device-ssr.service
+Requires=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service hyp-video-be.service qcx_be_server.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-glinkpassthrough.service vhost-user-frpc.service
+After=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-glinkpassthrough.service vhost-user-frpc.service
 
 [Service]
 Type=simple
@@ -43,6 +43,8 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-hab "/tmp/linux-vm2-cam-skt",label=3E,device-id=92,queue-num=4 \
 --vhost-user-scmi "/tmp/pt-dev-skt",label=42 \
 --vhost-user-ssr "/tmp/linux-vm2-ssr-skt0",label=47 \
+--vhost-user-gp /tmp/gp_hello,label=44 \
+--vhost-user-frpc "/tmp/sock_file_frpc",label=45 \
 --console=/tmp/la_gvm.txt,label=41 \
 --input=/dev/input/usb1_touchscreen0,label=3F
 
