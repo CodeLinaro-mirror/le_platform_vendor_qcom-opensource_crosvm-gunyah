@@ -34,6 +34,7 @@ ExecStart=/usr/bin/qcrosvm \
 --disk=/dev/disk/by-partlabel/la_userdata,label=35,rw=true \
 --disk=/dev/disk/by-partlabel/la_super,label=36,rw=true \
 --net=true,label=38,ip_addr=10.10.10.10,netmask=255.255.255.0,mac=5A:6F:F0:05:7C:24 \
+--net=true,label=37,ip_addr=10.10.10.11,netmask=255.255.255.0,mac=4A:6F:F0:05:7C:25 \
 --vhost-user-hab "/tmp/linux-vm2-disp-skt",label=3C,device-id=93,queue-num=10 \
 --vhost-user-hab "/tmp/linux-vm2-ogles-skt",label=39,device-id=94,queue-num=2 \
 --vhost-user-hab "/tmp/linux-vm2-misc-skt",label=3A,device-id=90,queue-num=2 \
