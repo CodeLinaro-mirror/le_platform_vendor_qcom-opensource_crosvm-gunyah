@@ -3,7 +3,6 @@
 [Unit]
 Description=Service to start the Linux GVM
 # List of service unit dependencies
-Requires=qcrosvm.service
 After=qcrosvm.service
 
 [Service]
