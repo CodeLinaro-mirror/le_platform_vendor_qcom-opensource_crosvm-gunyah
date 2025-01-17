@@ -14,6 +14,7 @@ ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b03 /firmware/vm/boot/
 ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.mdt /firmware/vm/boot/autoghgvmlv.mdt
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvmlv \
+--disk=/dev/disk/by-partlabel/modem_a,label=10a,rw=false \
 --disk=/dev/disk/by-partlabel/lv_persist,label=10F,rw=true \
 --disk=/dev/disk/by-partlabel/lv_userdata,label=111,rw=true \
 --disk=/dev/disk/by-partlabel/lv_system_a,label=112,rw=true \
