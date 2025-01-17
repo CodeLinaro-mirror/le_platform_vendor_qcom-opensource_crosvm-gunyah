@@ -44,7 +44,7 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-scmi "/tmp/pt-dev-skt",label=42 \
 --vhost-user-ssr "/tmp/linux-vm2-ssr-skt0",label=47 \
 --console=/tmp/la_gvm.txt,label=41 \
---input=/dev/input/event2,label=3F
+--input=/dev/input/usb1_touchscreen0,label=3F
 
 [Install]
 WantedBy = multi-user.target
