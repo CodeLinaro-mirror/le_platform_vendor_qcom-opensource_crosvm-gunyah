@@ -52,6 +52,7 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-gp /tmp/gp_hello,label=44 \
 --vhost-user-frpc "/tmp/sock_file_frpc",label=45 \
 --vhost-user-ssr "/tmp/linux-vm2-ssr-skt0",label=47 \
+--vhost-user-eavb "/tmp/linux-vm2-eavb-skt",label=4B \
 --input=/dev/input/usb1_touchscreen0,label=3F \
 --input=/dev/input/vmm-pwr-key,label=40 \
 --console=/tmp/la_gvm.txt,label=41 \
