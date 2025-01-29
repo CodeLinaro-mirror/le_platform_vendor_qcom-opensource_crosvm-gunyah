@@ -44,6 +44,7 @@ use devices::virtio::block::block::DiskOption;
 use devices::virtio::vhost::user::vmm::{
     Hab as VhostUserHab, Scmi as VhostUserScmi, I2cAdapter as VhostUserI2cAdapter,
     GlinkPassthrough as VhostUserGP, Frpc as VhostUserfrpc, Ssr as VhostUserSsr,
+    Eavb as VhostUserEAVB,
 };
 
 use crosvm::{
@@ -2063,6 +2064,133 @@ impl DeviceTrait for VirtioSockDevices {
     }
 }
 
+////// VIRTIO EAVB DEVICE //////
+struct VirtioEAVB {
+    label: u32,
+    mmio: Option<MmioDevice>,
+    config_space: Option<Vec<u32>>,
+    vhost_user_eavb: VhostUserOption,
+}
+
+impl VirtioEAVB {
+    pub fn new() -> Self {
+        VirtioEAVB {
+            label: 0,
+            mmio: None,
+            config_space: Some(Vec::new()),
+            vhost_user_eavb: VhostUserOption{
+                socket: PathBuf::new()
+            },
+        }
+    }
+}
+
+struct VirtioEAVBDevices {
+    virtio_eavb_devices: Vec<VirtioEAVB>,
+}
+impl VirtioEAVBDevices {
+    pub fn new() -> Self {
+        VirtioEAVBDevices { virtio_eavb_devices: Vec::new() }
+    }
+    fn create_veavb_devices(&mut self, cfg: &mut BackendConfig) -> Result<(), BackendError> {
+
+        for veavb in &mut self.virtio_eavb_devices {
+            let mem = cfg.mem.as_ref().expect(&format!("{}:{}", file!(), line!()));
+            let sfd :&SafeDescriptor;
+
+            match cfg.driver_variant {
+                1 => {sfd = cfg.sfd.as_ref().expect(&format!("{}:{}", file!(), line!()))}
+                2 => {sfd = cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!()))}
+                _ => return Err(BackendError::StrError(String::from("Unsupported driver variant.")))
+            };
+            let eavbdev =  VhostUserEAVB::new(virtio::base_features(ProtectionType::Unprotected), &veavb.vhost_user_eavb.socket)
+                                .map_err(|_| BackendError::StrError(String::from("vhost eavb new failed")))?;
+
+            veavb.mmio = Some(MmioDevice::new(mem.clone(), Box::new(eavbdev)).expect(&format!("{}:{}", file!(), line!())));
+            mmio_handle(&veavb.mmio, veavb.label, sfd, cfg)?;
+        }
+        Ok(())
+    }
+}
+
+impl DeviceTrait for VirtioEAVBDevices {
+    fn create_and_run_devices(&mut self, cfg: &mut BackendConfig) -> Result<Vec<JoinHandle<()>>, ()> {
+        let handles = create_device_threads!(
+            self,
+            cfg,
+            &mut self.virtio_eavb_devices,
+            VirtioEAVBDevices::create_veavb_devices,
+            init_config_space
+        );
+        Ok(handles)
+    }
+
+    fn set_argument(&mut self, value: Option<&str>) -> argument::Result<()> {
+
+        let mut veavb = VirtioEAVB::new();
+
+        let param = value.expect(&format!("{}:{}", file!(), line!()));
+        let mut components = param.split(',');
+
+        veavb.vhost_user_eavb = VhostUserOption {
+                    socket: PathBuf::from(
+                        components
+                        .next()
+                        .ok_or_else(|| argument::Error::InvalidValue {
+                            value: param.to_owned(),
+                            expected: String::from("vhost-user-eavb socket path must be provided"),
+                        })?,
+                        ),
+        };
+
+        if !veavb.vhost_user_eavb.socket.exists() {
+            return Err(argument::Error::InvalidValue {
+                value: param.to_owned(),
+                expected: String::from("vhost-user-eavb socket path must be an existing path"),
+            });
+        }
+
+        for opt in components {
+            let mut o = opt.splitn(2, '=');
+            let kind = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                value: opt.to_owned(),
+                expected: String::from("vhost-user-eavb options must not be empty"),
+            })?;
+
+            let value = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                value: opt.to_owned(),
+                expected: String::from("vhost-user-eavb options must be of the form `kind=value`"),
+            })?;
+
+            match kind {
+                "label" => {
+                    let label: u32 = u32::from_str_radix(value, 16)
+                        .map_err(|_| argument::Error::InvalidValue {
+                            value: value.to_owned(),
+                            expected: String::from("`label` must be an unsigned integer"),
+                        })?;
+                    if label == 0 {
+                        return Err(argument::Error::InvalidValue {
+                            value: value.to_owned(),
+                            expected: String::from("`label` must be a non zero integer"),
+                        });
+                    }
+                    veavb.label = label;
+                }
+                _ => {
+                    return Err(argument::Error::InvalidValue {
+                        value: kind.to_owned(),
+                        expected: String::from("vhost-user-eavb only supports label"),
+                    });
+                }
+            }
+        }
+
+        self.virtio_eavb_devices.push(veavb);
+        Ok(())
+    }
+}
+
 /// Aggregate of all configurable options for a block device
 struct BackendConfig {
     sfd: Option<SafeDescriptor>,
@@ -2115,6 +2243,7 @@ struct VMBackend {
     vconsole_devices: VirtioConsoleDevices,
     vuvirtio_ssr_devices: VuVirtioSsrDevices,
     vsock_devices: VirtioSockDevices,
+    veavb_devices: VirtioEAVBDevices,
 }
 
 impl VMBackend {
@@ -2134,6 +2263,7 @@ impl VMBackend {
             vconsole_devices: VirtioConsoleDevices::new(),
             vuvirtio_ssr_devices: VuVirtioSsrDevices::new(),
             vsock_devices: VirtioSockDevices::new(),
+            veavb_devices: VirtioEAVBDevices::new(),
         }
     }
 
@@ -2252,6 +2382,10 @@ impl VMBackend {
             "vsock" => {
                 self.cfg.bkend_dev_exist = true;
                 self.vsock_devices.set_argument(value)?
+            }
+            "vhost-user-eavb" => {
+                self.cfg.bkend_dev_exist = true;
+                self.veavb_devices.set_argument(value)?
             }
             _ => unreachable!(),
         }
@@ -2408,6 +2542,7 @@ impl VMBackend {
             &mut self.vuvirtio_ssr_devices,
             &mut self.vsock_devices,
             &mut self.vcpus,    // vCPU create and run at the end
+            &mut self.veavb_devices,
         ];
 
         let mut device_thread_vecs = vec![];
@@ -2663,6 +2798,7 @@ fn print_usage() {
     [--vhost-user-ssr SOCKET_PATH,label=LABEL]
     [--console PATH,label=LABEL]
     [--vsock label=LABEL,cid=CONTEXT_ID]
+    [--vhost-user-eavb SOCKET_PATH,label=LABEL]
     --vm=VMNAME");
     println!("\n[-l] or [--log=[level=trace|debug|info|warn|error],[type=ftrace|logcat|term]]");
     println!("Default logger level: info");
@@ -3134,6 +3270,7 @@ fn parse_and_run(args: std::env::Args) -> Result<(), ()> {
         Argument::value("console", "PATH,label=LABEL", "stdout or Path to a log file followed by comma-separated option label=LABEL"),
         Argument::value("vhost-user-gp", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::value("vsock", "label=LABEL[,key=value", "label=LABEL,cid=context-id"),
+        Argument::value("vhost-user-eavb", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         ];
 
     let mut vm = VMBackend::new();
