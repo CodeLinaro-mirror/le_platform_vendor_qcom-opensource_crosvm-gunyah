@@ -3,8 +3,8 @@
 [Unit]
 Description=Service to start the Android GVM
 # List of service unit dependencies
-Requires=vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-ext.service vhost-user-gpce.service vmm-pwr-key.service
-After=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-ext.service vhost-user-gpce.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service vmm-pwr-key.service
+Requires=vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-ext.service vhost-user-gpce.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service
+After=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-ext.service vhost-user-gpce.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service
 # List of device unit dependencies
 Requires=dev-input-vmm\x2dpwr\x2dkey.device
 After=dev-input-vmm\x2dpwr\x2dkey.device
@@ -50,6 +50,8 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-scmi "/tmp/pt-dev-skt",label=42 \
 --input=/dev/input/event1,label=3F \
 --input=/dev/input/vmm-pwr-key,label=40 \
+--vhost-user-gp /tmp/gp_hello,label=44 \
+--vhost-user-frpc "/tmp/sock_file_frpc",label=45 \
 --console=/tmp/la_gvm.txt,label=41 \
 --vsock cid=100,label=43
 
