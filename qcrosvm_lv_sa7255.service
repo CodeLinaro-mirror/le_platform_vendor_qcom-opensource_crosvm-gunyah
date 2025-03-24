@@ -6,6 +6,7 @@ Description=Service to start the Linux GVM
 
 [Service]
 Type=simple
+Slice=gvm.slice
 ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b00 /firmware/vm/boot/autoghgvmlv.b00
 ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b01 /firmware/vm/boot/autoghgvmlv.b01
 ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b02 /firmware/vm/boot/autoghgvmlv.b02
