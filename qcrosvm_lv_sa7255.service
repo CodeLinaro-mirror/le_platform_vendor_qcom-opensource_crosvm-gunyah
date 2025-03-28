@@ -34,7 +34,7 @@ ExecStart=/usr/bin/qcrosvm \
 --disk=/dev/disk/by-partlabel/lv_userdata,label=111,rw=true \
 --disk=/dev/disk/by-partlabel/lv_system_a,label=112,rw=true \
 --disk=/dev/disk/by-partlabel/lv_system_b,label=113,rw=true \
---net=true,label=114,ip_addr=10.10.10.18,netmask=255.255.255.0,mac=5A:6F:66:05:FF:25,tapName=lagvm0  \
+--net=true,label=114,ip_addr=10.10.10.18,netmask=255.255.255.0,mac=5A:6F:66:05:FF:25,tapName=lvgvm0  \
 --console=/tmp/lv_gvm.txt,label=121
 
 [Install]
