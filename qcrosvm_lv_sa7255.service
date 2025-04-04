@@ -1,10 +1,8 @@
-# Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause-Clear
 [Unit]
 Description=Service to start the Linux GVM
 # List of service unit dependencies
-Requires=qcrosvm.service
-After=qcrosvm.service
 
 [Service]
 Type=simple
@@ -12,14 +10,32 @@ ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b00 /firmware/vm/boot/
 ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b01 /firmware/vm/boot/autoghgvmlv.b01
 ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b02 /firmware/vm/boot/autoghgvmlv.b02
 ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b03 /firmware/vm/boot/autoghgvmlv.b03
+ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b04 /firmware/vm/boot/autoghgvmlv.b04
 ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.mdt /firmware/vm/boot/autoghgvmlv.mdt
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvmlv \
 --use-non-protected-virtio \
+--disk=/dev/disk/by-partlabel/lv_misc,label=10E,rw=true \
+--disk=/dev/disk/by-partlabel/lv_dtbo_a,label=124,rw=true \
+--disk=/dev/disk/by-partlabel/lv_dtbo_b,label=125,rw=true \
+--disk=/dev/disk/by-partlabel/lv_devinfo,label=101,rw=true \
+--disk=/dev/disk/by-partlabel/lv_firmware,label=110,rw=true \
+--disk=/dev/disk/by-partlabel/bluetooth_a,label=108,rw=false \
+--disk=/dev/disk/by-partlabel/bluetooth_b,label=109,rw=false \
+--disk=/dev/disk/by-partlabel/modem_a,label=10A,rw=false \
+--disk=/dev/disk/by-partlabel/modem_b,label=10B,rw=false \
+--disk=/dev/disk/by-partlabel/dsp_a,label=102,rw=false \
+--disk=/dev/disk/by-partlabel/dsp_b,label=103,rw=false \
+--disk=/dev/disk/by-partlabel/lv_boot_a,label=106,rw=true \
+--disk=/dev/disk/by-partlabel/lv_boot_b,label=107,rw=true \
+--disk=/dev/disk/by-partlabel/lv_vbmeta_a,label=10C,rw=true \
+--disk=/dev/disk/by-partlabel/lv_vbmeta_b,label=10D,rw=true \
 --disk=/dev/disk/by-partlabel/lv_persist,label=10F,rw=true \
 --disk=/dev/disk/by-partlabel/lv_userdata,label=111,rw=true \
 --disk=/dev/disk/by-partlabel/lv_system_a,label=112,rw=true \
---net=true,label=114,ip_addr=10.10.10.18,netmask=255.255.255.0,mac=5A:6F:66:05:FF:25,tapName=1
+--disk=/dev/disk/by-partlabel/lv_system_b,label=113,rw=true \
+--net=true,label=114,ip_addr=10.10.10.18,netmask=255.255.255.0,mac=5A:6F:66:05:FF:25,tapName=lvgvm0  \
+--console=/tmp/lv_gvm.txt,label=121
 
 [Install]
 WantedBy = multi-user.target
