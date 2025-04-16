@@ -18,8 +18,8 @@ ExecStart=/usr/bin/qcrosvm \
 --disk=/dev/disk/by-partlabel/la_devinfo,label=21,rw=true \
 --disk=/dev/disk/by-partlabel/la_init_boot_a,label=22,rw=true \
 --disk=/dev/disk/by-partlabel/la_init_boot_b,label=23,rw=true \
---disk=/dev/disk/by-partlabel/la_v_boot_a,label=24,rw=true \
---disk=/dev/disk/by-partlabel/la_v_boot_b,label=25,rw=true \
+--disk=/dev/disk/by-partlabel/la_vendor_boot_a,label=24,rw=true \
+--disk=/dev/disk/by-partlabel/la_vendor_boot_b,label=25,rw=true \
 --disk=/dev/disk/by-partlabel/dsp_a,label=26,rw=false \
 --disk=/dev/disk/by-partlabel/dsp_b,label=27,rw=false \
 --disk=/dev/disk/by-partlabel/la_dtbo_a,label=28,rw=true \
