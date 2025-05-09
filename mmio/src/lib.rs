@@ -49,6 +49,7 @@ use sync::Mutex;
 use devices::pci::MsixConfig;
 use devices::pci::PciId;
 
+pub const DEVICE_RESET: u32 = 0x0;
 const DEVICE_ACKNOWLEDGE: u32 = 0x01;
 const DEVICE_DRIVER: u32 = 0x02;
 const DEVICE_DRIVER_OK: u32 = 0x04;
@@ -77,98 +78,102 @@ const VIRTIO_PCI_VENDOR_ID: u16 = 0x1af4;
 /// Typically one page (4096 bytes) of MMIO address space is sufficient to handle this transport
 /// and inner virtio device.
 pub struct MmioDevice {
-        pub device: Box<dyn VirtioDevice>,
-        device_activated: bool,
-        features_select: u32,
-        acked_features_select: u32,
-        queue_select: u32,
-        interrupt_status: Arc<AtomicUsize>,
-        interrupt_evt: Option<IrqLevelEvent>,
-        driver_status: u32,
-        config_generation: u32,
-        queues: Vec<Queue>,
-        queue_evts: Vec<Event>,
-        mem: Option<GuestMemory>,
-        msix_config: Arc<Mutex<MsixConfig>>,
+    pub device: Box<dyn VirtioDevice>,
+    device_activated: bool,
+    features_select: u32,
+    acked_features_select: u32,
+    queue_select: u32,
+    interrupt_status: Arc<AtomicUsize>,
+    interrupt_evt: Option<IrqLevelEvent>,
+    driver_status: u32,
+    config_generation: u32,
+    queues: Vec<Queue>,
+    queue_evts: Vec<Event>,
+    mem: Option<GuestMemory>,
+    msix_config: Arc<Mutex<MsixConfig>>,
 }
 
 impl MmioDevice {
 
-        /// Returns a label suitable for debug output.
-        fn debug_label(&self) -> String {
-            format!("virtio-mmio ({})", self.device.debug_label())
+    /// Returns a label suitable for debug output.
+    fn debug_label(&self) -> String {
+        format!("virtio-mmio ({})", self.device.debug_label())
+    }
+
+    /// Constructs a new MMIO transport for the given virtio device.
+    pub fn new(mem: GuestMemory, device: Box<dyn VirtioDevice>) -> Result<MmioDevice> {
+        let mut queue_evts = Vec::new();
+        for _ in device.queue_max_sizes().iter() {
+            queue_evts.push(Event::new()?);
         }
 
-        /// Constructs a new MMIO transport for the given virtio device.
-        pub fn new(mem: GuestMemory, device: Box<dyn VirtioDevice>) -> Result<MmioDevice> {
-            let mut queue_evts = Vec::new();
-            for _ in device.queue_max_sizes().iter() {
-                queue_evts.push(Event::new()?);
-            }
+        let queues = device
+            .queue_max_sizes()
+            .iter()
+            .map(|&s| Queue::new(s))
+            .collect();
 
-            let queues = device
-                        .queue_max_sizes()
-                        .iter()
-                        .map(|&s| Queue::new(s))
-                        .collect();
+        let pci_device_id = device.device_type() as u16;
+        let num_interrupts = device.num_interrupts();
+        let msix_num = u16::try_from(num_interrupts + 0).map_err(|_| base::Error::new(ERANGE))?;
+        let (_, device_tube) = Tube::pair().expect("failed to create mmio device tube");
+        let msix_config = Arc::new(Mutex::new(MsixConfig::new(
+                    msix_num,
+                    device_tube,
+                    PciId::new(VIRTIO_PCI_VENDOR_ID, pci_device_id).into(),
+                    device.debug_label(),
+                    )));
 
-            let pci_device_id = device.device_type() as u16;
-            let num_interrupts = device.num_interrupts();
-            let msix_num = u16::try_from(num_interrupts + 0).map_err(|_| base::Error::new(ERANGE))?;
-            let (_, device_tube) = Tube::pair().expect("failed to create mmio device tube");
-            let msix_config = Arc::new(Mutex::new(MsixConfig::new(
-                        msix_num,
-                        device_tube,
-                        PciId::new(VIRTIO_PCI_VENDOR_ID, pci_device_id).into(),
-                        device.debug_label(),
-                        )));
+        Ok(MmioDevice {
+            device,
+            device_activated: false,
+            features_select: 0,
+            acked_features_select: 0,
+            queue_select: 0,
+            interrupt_status: Arc::new(AtomicUsize::new(0)),
+            interrupt_evt: Some(IrqLevelEvent::new()?),
+            driver_status: 0,
+            config_generation: 0,
+            queues,
+            queue_evts,
+            mem: Some(mem),
+            msix_config,
+        })
+    }
 
-            Ok(MmioDevice {
-                        device,
-                        device_activated: false,
-                        features_select: 0,
-                        acked_features_select: 0,
-                        queue_select: 0,
-                        interrupt_status: Arc::new(AtomicUsize::new(0)),
-                        interrupt_evt: Some(IrqLevelEvent::new()?),
-                        driver_status: 0,
-                        config_generation: 0,
-                        queues,
-                        queue_evts,
-                        mem: Some(mem),
-                        msix_config,
-            })
+    /// Gets the list of queue events that must be triggered whenever the VM writes to
+    /// `virtio::NOTIFY_REG_OFFSET` past the MMIO base. Each event must be triggered when the
+    /// value being written equals the index of the event in this list.
+    pub fn queue_evts(&self) -> &[Event] {
+        self.queue_evts.as_slice()
+    }
+
+    /// Gets the event this device uses to interrupt the VM when the used queue is changed.
+    pub fn interrupt_evt(&self) -> Option<&Event> {
+        let interrupt_evt = self.interrupt_evt.as_ref().unwrap();
+        Some(interrupt_evt.get_trigger())
+    }
+
+    fn is_driver_ready(&self) -> bool {
+        let ready_bits = DEVICE_ACKNOWLEDGE | DEVICE_DRIVER | DEVICE_DRIVER_OK | DEVICE_FEATURES_OK;
+        self.driver_status == ready_bits && self.driver_status & DEVICE_FAILED == 0
+    }
+
+    fn is_reset_requested(&self) -> bool {
+        self.driver_status == DEVICE_RESET
+    }
+
+    fn are_queues_valid(&self) -> bool {
+        if let Some(mem) = self.mem.as_ref() {
+            self.queues.iter().all(|q| q.is_valid(mem))
+        } else {
+            false
         }
+    }
 
-        /// Gets the list of queue events that must be triggered whenever the VM writes to
-        /// `virtio::NOTIFY_REG_OFFSET` past the MMIO base. Each event must be triggered when the
-        /// value being written equals the index of the event in this list.
-        pub fn queue_evts(&self) -> &[Event] {
-            self.queue_evts.as_slice()
-        }
-
-        /// Gets the event this device uses to interrupt the VM when the used queue is changed.
-        pub fn interrupt_evt(&self) -> Option<&Event> {
-            let interrupt_evt = self.interrupt_evt.as_ref().unwrap();
-            Some(interrupt_evt.get_trigger())
-        }
-
-        fn is_driver_ready(&self) -> bool {
-            let ready_bits = DEVICE_ACKNOWLEDGE | DEVICE_DRIVER | DEVICE_DRIVER_OK | DEVICE_FEATURES_OK;
-            self.driver_status == ready_bits && self.driver_status & DEVICE_FAILED == 0
-        }
-
-        fn are_queues_valid(&self) -> bool {
-            if let Some(mem) = self.mem.as_ref() {
-                self.queues.iter().all(|q| q.is_valid(mem))
-            } else {
-                false
-            }
-        }
-
-        fn with_queue<U, F>(&self, d: U, f: F) -> U
+    fn with_queue<U, F>(&self, d: U, f: F) -> U
         where
-        F: FnOnce(&Queue) -> U,
+            F: FnOnce(&Queue) -> U,
         {
             match self.queues.get(self.queue_select as usize) {
                 Some(queue) => f(queue),
@@ -176,128 +181,138 @@ impl MmioDevice {
             }
         }
 
-        fn with_queue_mut<F: FnOnce(&mut Queue)>(&mut self, f: F) -> bool {
-            if let Some(queue) = self.queues.get_mut(self.queue_select as usize) {
-                f(queue);
-                true
-            } else {
-                false
+    fn with_queue_mut<F: FnOnce(&mut Queue)>(&mut self, f: F) -> bool {
+        if let Some(queue) = self.queues.get_mut(self.queue_select as usize) {
+            f(queue);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn get_num_queues(&self) -> u32 {
+        return self.queues.len() as u32;
+    }
+
+    pub fn read(&mut self, offset: u64, data: &mut [u8]) {
+        match offset {
+            0x00..=0xff if data.len() == 4 => {
+                let v = match offset {
+                    0x0 => MMIO_MAGIC_VALUE,
+                    0x04 => MMIO_VERSION,
+                    0x08 => self.device.device_type(),
+                    0x0c => VENDOR_ID, // vendor id
+                    0x10 => {
+                        let f: u64 = self.device.features();
+                        let mut v: u32 = (f >> (self.features_select * 32)) as u32;
+                        v = v | if self.features_select == 1 { 0x3 } else { 0x0 };
+                        v
+                    }
+                    0x34 => self.with_queue(0, |q| q.max_size as u32),
+                    0x44 => self.with_queue(0, |q| q.ready as u32),
+                    0x60 => self.interrupt_status.load(Ordering::SeqCst) as u32,
+                    0x70 => self.driver_status,
+                    0xfc => self.config_generation,
+                    _ => {
+                        warn!("{}", format!("unknown virtio mmio register read {:x}", offset));
+                        return;
+                    }
+                };
+
+                data.copy_from_slice(&v.to_le_bytes());
             }
+            0x100..=0xfff => {
+                self.device.read_config(offset - 0x100, data);
+            }
+            _ => {
+                let v: i32 = 0;
+                data.copy_from_slice(&v.to_le_bytes());
+                warn!("{}", format!("invalid virtio mmio read: 0x{:x}:0x{:x}", offset, data.len()));
+            }
+        };
+    }
+
+    pub fn write(&mut self, offset: u64, data: &[u8]) {
+        fn hi(v: &mut GuestAddress, x: u32) {
+            *v = (*v & 0xffffffff) | ((x as u64) << 32)
         }
 
-        pub fn get_num_queues(&self) -> u32 {
-                  return self.queues.len() as u32;
-		    }
-
-        pub fn read(&mut self, offset: u64, data: &mut [u8]) {
-            match offset {
-                0x00..=0xff if data.len() == 4 => {
-                    let v = match offset {
-                        0x0 => MMIO_MAGIC_VALUE,
-                        0x04 => MMIO_VERSION,
-                        0x08 => self.device.device_type(),
-                        0x0c => VENDOR_ID, // vendor id
-                        0x10 => {
-                            let f: u64 = self.device.features();
-                            let mut v: u32 = (f >> (self.features_select * 32)) as u32;
-                            v = v | if self.features_select == 1 { 0x3 } else { 0x0 };
-                            v
-                       }
-                       0x34 => self.with_queue(0, |q| q.max_size as u32),
-                       0x44 => self.with_queue(0, |q| q.ready as u32),
-                       0x60 => self.interrupt_status.load(Ordering::SeqCst) as u32,
-                       0x70 => self.driver_status,
-                       0xfc => self.config_generation,
-                       _ => {
-                           warn!("{}", format!("unknown virtio mmio register read {:x}", offset));
-                           return;
-                      }
-                   };
-
-                   data.copy_from_slice(&v.to_le_bytes());
-               }
-               0x100..=0xfff => {
-                   self.device.read_config(offset - 0x100, data);
-               }
-               _ => {
-                   let v: i32 = 0;
-                   data.copy_from_slice(&v.to_le_bytes());
-                   warn!("{}", format!("invalid virtio mmio read: 0x{:x}:0x{:x}", offset, data.len()));
-               }
-           };
+        fn lo(v: &mut GuestAddress, x: u32) {
+            *v = (*v & !0xffffffff) | (x as u64)
         }
 
-        pub fn write(&mut self, offset: u64, data: &[u8]) {
-            fn hi(v: &mut GuestAddress, x: u32) {
-                *v = (*v & 0xffffffff) | ((x as u64) << 32)
-            }
-
-            fn lo(v: &mut GuestAddress, x: u32) {
-                *v = (*v & !0xffffffff) | (x as u64)
-            }
-
-            let mut mut_q = false;
-            match offset {
-                0x00..=0xff if data.len() == 4 => {
-                    let v = u32::from_le_bytes(data.try_into().unwrap());
-                    debug!("{}", format!("mmio_write offset {:x} val {:x}", offset, v));
-                    match offset {
-                        0x14 => self.features_select = v,
-                        0x20 => {
-                            let features: u64 = (v as u64) << (self.acked_features_select * 32);
-                            self.device.ack_features(features);
-                            for q in self.queues.iter_mut() {
-                                q.ack_features(features);
-                            }
-                        }
-                        0x24 => self.acked_features_select = v,
-                        0x30 => self.queue_select = v,
-                        0x38 => mut_q = self.with_queue_mut(|q| q.size = v as u16),
-                        0x44 => mut_q = self.with_queue_mut(|q| q.ready = v == 1),
-                        0x64 => {},
-                        0x70 => self.driver_status = v,
-                        0x80 => mut_q = self.with_queue_mut(|q| lo(&mut q.desc_table, v)),
-                        0x84 => mut_q = self.with_queue_mut(|q| hi(&mut q.desc_table, v)),
-                        0x90 => mut_q = self.with_queue_mut(|q| lo(&mut q.avail_ring, v)),
-                        0x94 => mut_q = self.with_queue_mut(|q| hi(&mut q.avail_ring, v)),
-                        0xa0 => mut_q = self.with_queue_mut(|q| lo(&mut q.used_ring, v)),
-                        0xa4 => mut_q = self.with_queue_mut(|q| hi(&mut q.used_ring, v)),
-                        _ => {
-                            warn!("{}", format!("unknown virtio mmio register write: 0x{:x}", offset));
-                            return;
+        let mut mut_q = false;
+        match offset {
+            0x00..=0xff if data.len() == 4 => {
+                let v = u32::from_le_bytes(data.try_into().unwrap());
+                debug!("{}", format!("mmio_write offset {:x} val {:x}", offset, v));
+                match offset {
+                    0x14 => self.features_select = v,
+                    0x20 => {
+                        let features: u64 = (v as u64) << (self.acked_features_select * 32);
+                        self.device.ack_features(features);
+                        for q in self.queues.iter_mut() {
+                            q.ack_features(features);
                         }
                     }
-                }
-                0x100..=0xfff => {
-                    warn!("{}", format!("{:x} [W] ", offset));
-                    return self.device.write_config(offset - 0x100, data);
-                }
-                _ => {
-                    warn!("{}", format!("invalid virtio mmio write: 0x{:x}:0x{:x}", offset, data.len()));
-                    return;
+                    0x24 => self.acked_features_select = v,
+                    0x30 => self.queue_select = v,
+                    0x38 => mut_q = self.with_queue_mut(|q| q.size = v as u16),
+                    0x44 => mut_q = self.with_queue_mut(|q| q.ready = v == 1),
+                    0x64 => {},
+                    0x70 => self.driver_status = v,
+                    0x80 => mut_q = self.with_queue_mut(|q| lo(&mut q.desc_table, v)),
+                    0x84 => mut_q = self.with_queue_mut(|q| hi(&mut q.desc_table, v)),
+                    0x90 => mut_q = self.with_queue_mut(|q| lo(&mut q.avail_ring, v)),
+                    0x94 => mut_q = self.with_queue_mut(|q| hi(&mut q.avail_ring, v)),
+                    0xa0 => mut_q = self.with_queue_mut(|q| lo(&mut q.used_ring, v)),
+                    0xa4 => mut_q = self.with_queue_mut(|q| hi(&mut q.used_ring, v)),
+                    _ => {
+                        warn!("{}", format!("unknown virtio mmio register write: 0x{:x}", offset));
+                        return;
+                    }
                 }
             }
-
-            if self.device_activated && mut_q && offset != 0x50 {
-                warn!("virtio queue was changed after device was activated");
+            0x100..=0xfff => {
+                warn!("{}", format!("{:x} [W] ", offset));
+                return self.device.write_config(offset - 0x100, data);
             }
+            _ => {
+                warn!("{}", format!("invalid virtio mmio write: 0x{:x}:0x{:x}", offset, data.len()));
+                return;
+            }
+        }
 
-            if !self.device_activated && self.is_driver_ready() && self.are_queues_valid() {
-                let interrupt_evt = self.interrupt_evt.as_ref().unwrap();
-                let mem = self.mem.clone().unwrap();
-		self.device.on_device_sandboxed();
+        if self.device_activated && mut_q && offset != 0x50 {
+            warn!("virtio queue was changed after device was activated");
+        }
 
-        let mut interrupt = Interrupt::new(
+        if !self.device_activated && self.is_driver_ready() && self.are_queues_valid() {
+            let interrupt_evt = self.interrupt_evt.as_ref().unwrap();
+            let mem = self.mem.clone().unwrap();
+            self.device.on_device_sandboxed();
+
+            let mut interrupt = Interrupt::new(
                 self.interrupt_status.clone(),
                 interrupt_evt.try_clone().unwrap(),
                 Some(self.msix_config.clone()),
                 VIRTIO_MSI_NO_VECTOR,
-        );
-		Interrupt::set_skip_check(&mut interrupt);
+                );
+            Interrupt::set_skip_check(&mut interrupt);
 
-		self.device.activate(mem, interrupt, self.queues.clone(), self.queue_evts.split_off(0));
-		self.device_activated = true;
-		debug!("{} activated!", self.debug_label());
+            self.device.activate(mem, interrupt, self.queues.clone(), self.queue_evts.split_off(0));
+            self.device_activated = true;
+            debug!("{} activated!", self.debug_label());
+        }
+
+        if self.device_activated && self.is_reset_requested() {
+            self.device.reset();
+            self.device_activated = false;
+            self.queues.iter_mut().for_each(Queue::reset);
+            self.queue_select = 0;
+            for _ in self.device.queue_max_sizes().iter() {
+                self.queue_evts.push(Event::new().unwrap());
             }
-      }
+        }
+    }
 }
