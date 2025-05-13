@@ -9,6 +9,7 @@ use std::env;
 use std::default::Default;
 use std::path::{Path, PathBuf};
 use std::string::String;
+use std::fs;
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::{RawFd, FromRawFd};
@@ -1189,9 +1190,13 @@ impl DeviceTrait for VirtioConsoleDevices {
                 serial_path = Some(PathBuf::from(DEF_SERIAL_FILE));
             }
 
-            println!("The Final serial file is {}", serial_path.as_ref().unwrap().to_string_lossy());
+            if let Some(log_file) = serial_path.as_ref() {
+                if log_file.exists() {
+                    println!("Remove previous log file {}", log_file.to_string_lossy());
+                    fs::remove_file(log_file);
+                }
+            }
         }
-
         // Add a virtio-console device with console=true.
         vconsole.serial_params = SerialParameters {
             type_: serial_type,
