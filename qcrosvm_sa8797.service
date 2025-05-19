@@ -12,6 +12,7 @@ Wants=gvm_net_config.service
 
 [Service]
 Type=simple
+Slice=gvm.slice
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvm \
 --use-non-protected-virtio \
