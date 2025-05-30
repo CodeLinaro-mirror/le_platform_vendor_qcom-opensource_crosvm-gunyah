@@ -215,7 +215,7 @@ impl MmioDevice {
                     0xfc => self.config_generation,
                     _ => {
                         warn!("{}", format!("unknown virtio mmio register read {:x}", offset));
-                        return;
+                        0
                     }
                 };
 
