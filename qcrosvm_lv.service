@@ -12,12 +12,12 @@ After=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
 [Service]
 Type=simple
 Slice=gvm.slice
-ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b00 /firmware/vm/boot/autoghgvmlv.b00
-ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b01 /firmware/vm/boot/autoghgvmlv.b01
-ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b02 /firmware/vm/boot/autoghgvmlv.b02
-ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b03 /firmware/vm/boot/autoghgvmlv.b03
-ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b04 /firmware/vm/boot/autoghgvmlv.b04
-ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.mdt /firmware/vm/boot/autoghgvmlv.mdt
+ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b00 /firmware/vm/boot/autoghgvmlv.b00
+ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b01 /firmware/vm/boot/autoghgvmlv.b01
+ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b02 /firmware/vm/boot/autoghgvmlv.b02
+ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b03 /firmware/vm/boot/autoghgvmlv.b03
+ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b04 /firmware/vm/boot/autoghgvmlv.b04
+ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.mdt /firmware/vm/boot/autoghgvmlv.mdt
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvmlv \
 --use-non-protected-virtio \
