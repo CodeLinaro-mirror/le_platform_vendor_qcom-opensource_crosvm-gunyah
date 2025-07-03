@@ -8,6 +8,7 @@ After=qcrosvm.service vhost-user-scmi-lv.service vmm-pwr-key.service
 # List of device unit dependencies
 Requires=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
 After=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
+Wants=gvm_net_config_lvgvm.service
 
 [Service]
 Type=simple
