@@ -44,6 +44,13 @@ use std::sync::Arc;
 use std::convert::TryInto;
 
 use devices::virtio::block::block::DiskOption;
+#[cfg(not(feature = "vhost-user-generic"))]
+use devices::virtio::vhost::user::vmm::{
+    Hab as VhostUserHab, Scmi as VhostUserScmi, I2cAdapter as VhostUserI2cAdapter,
+    GlinkPassthrough as VhostUserGP, Frpc as VhostUserfrpc, Ssr as VhostUserSsr,
+    Eavb as VhostUserEAVB, Fs as VhostUserfs
+};
+#[cfg(feature = "vhost-user-generic")]
 use devices::virtio::vhost::user::vmm::{
     Hab as VhostUserHab, Scmi as VhostUserScmi, I2cAdapter as VhostUserI2cAdapter,
     GlinkPassthrough as VhostUserGP, Frpc as VhostUserfrpc, Ssr as VhostUserSsr,
@@ -1903,6 +1910,7 @@ impl DeviceTrait for VuVirtioSsrDevices {
 }
 
 ////// VU_VIRTIO_GENERIC //////
+#[cfg(feature = "vhost-user-generic")]
 struct VuVirtioGeneric {
     label: u32,
     mmio: Option<MmioDevice>,
@@ -1911,6 +1919,7 @@ struct VuVirtioGeneric {
     vhost_user_generic: VhostUserOption,
 }
 
+#[cfg(feature = "vhost-user-generic")]
 impl VuVirtioGeneric {
     pub fn new() -> Self {
         VuVirtioGeneric{
@@ -1925,10 +1934,12 @@ impl VuVirtioGeneric {
     }
 }
 
+#[cfg(feature = "vhost-user-generic")]
 struct VuVirtioGenericDevices {
     vugeneric_devices: Vec<VuVirtioGeneric>,
 }
 
+#[cfg(feature = "vhost-user-generic")]
 impl VuVirtioGenericDevices {
     pub fn new() -> Self {
         VuVirtioGenericDevices {
@@ -1960,6 +1971,7 @@ impl VuVirtioGenericDevices {
     }
 }
 
+#[cfg(feature = "vhost-user-generic")]
 impl DeviceTrait for VuVirtioGenericDevices {
     fn create_and_run_devices(&mut self, cfg: &mut BackendConfig) -> Result<Vec<JoinHandle<()>>, ()> {
         let handles = create_device_threads!(
@@ -2546,6 +2558,7 @@ struct VMBackend {
     vuvirtio_ssr_devices: VuVirtioSsrDevices,
     vsock_devices: VirtioSockDevices,
     veavb_devices: VirtioEAVBDevices,
+    #[cfg(feature = "vhost-user-generic")]
     vugeneric_devices: VuVirtioGenericDevices,
 }
 
@@ -2568,6 +2581,7 @@ impl VMBackend {
             vuvirtio_ssr_devices: VuVirtioSsrDevices::new(),
             vsock_devices: VirtioSockDevices::new(),
             veavb_devices: VirtioEAVBDevices::new(),
+            #[cfg(feature = "vhost-user-generic")]
             vugeneric_devices: VuVirtioGenericDevices::new(),
         }
     }
@@ -2696,6 +2710,7 @@ impl VMBackend {
                 self.cfg.bkend_dev_exist = true;
                 self.veavb_devices.set_argument(value)?
             }
+            #[cfg(feature = "vhost-user-generic")]
             "vhost-user-generic" => {
                 self.cfg.bkend_dev_exist = true;
                 self.vugeneric_devices.set_argument(value)?
@@ -2855,6 +2870,7 @@ impl VMBackend {
             &mut self.vuvirtio_frpc_devices,
             &mut self.vuvirtio_ssr_devices,
             &mut self.vsock_devices,
+            #[cfg(feature = "vhost-user-generic")]
             &mut self.vugeneric_devices,
             &mut self.vcpus,    // vCPU create and run at the end
             &mut self.veavb_devices,
@@ -3109,14 +3125,15 @@ fn print_usage() {
     [--vhost-user-hab SOCKET_PATH,device_id=DEVICE_ID,queue-num=QUEUE_NUM,label=LABEL]
     [--vhost-user-i2c SOCKET_PATH,label=LABEL]
     [--vhost-user-fs SOCKET_PATH,label=LABEL]
-    [--vhost-user-generic SOCKET_PATH,label=LABEL[,queue-num=QUEUE_NUM]]
     [--vhost-user-scmi SOCKET_PATH,label=LABEL]
     [--vhost-user-frpc SOCKET_PATH,label=LABEL]
     [--vhost-user-ssr SOCKET_PATH,label=LABEL]
     [--console PATH,label=LABEL]
     [--vsock label=LABEL,cid=CONTEXT_ID]
-    [--vhost-user-eavb SOCKET_PATH,label=LABEL]
-    --vm=VMNAME");
+    [--vhost-user-eavb SOCKET_PATH,label=LABEL]");
+    #[cfg(feature = "vhost-user-generic")]
+    println!("\t[--vhost-user-generic SOCKET_PATH,label=LABEL[,queue-num=QUEUE_NUM]]");
+    println!("\t--vm=VMNAME");
     println!("\n[-l] or [--log=[level=trace|debug|info|warn|error],[type=ftrace|logcat|term]]");
     println!("Default logger level: info");
     println!("Default logger type: ftrace");
@@ -3574,6 +3591,7 @@ fn parse_and_run(args: std::env::Args) -> Result<(), ()> {
         Argument::value("vhost-user-scmi", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::value("vhost-user-i2c", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::value("vhost-user-fs", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
+        #[cfg(feature = "vhost-user-generic")]
         Argument::value("vhost-user-generic", "SOCKET_PATH", "label=LABEL[,queue-num=N]"),
         Argument::value("vhost-user-frpc", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::value("vhost-user-ssr", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
