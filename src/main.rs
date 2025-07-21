@@ -9,6 +9,7 @@ use std::env;
 use std::default::Default;
 use std::path::{Path, PathBuf};
 use std::string::String;
+use std::fs;
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::{RawFd, FromRawFd};
@@ -19,6 +20,8 @@ use std::str::FromStr;
 use std::thread::JoinHandle;
 use std::process;
 use std::net;
+use std::thread::sleep;
+use std::time::Duration;
 use net_util::{MacAddress, Tap, TapT};
 extern crate simplelog;
 use simplelog::*;
@@ -107,6 +110,8 @@ const VIRTIO_MMIO_DEVICE_CONFIG: u64 = 0x100;
 const GH_VCPU_MAX: u16 = 512;
 const CROSVM_MINIJAIL_POLICY: &str = "/system_ext/etc/seccomp_policy/qcrosvm.policy";
 const LOG_TAG: &str = "qcrosvm";
+const RETRY_LIMIT: u16 = 20;
+const RETRY_DELAY_MS: u64 = 100;
 
 #[derive(Debug)]
 enum BackendError {
@@ -989,6 +994,8 @@ impl DeviceTrait for VirtioHabDevices {
 
         let param = value.expect(&format!("{}:{}", file!(), line!()));
         let mut components = param.split(',');
+        let mut retries = 0;
+        let max_retries = RETRY_LIMIT;
 
         vhab.vhost_user_hab = VhostUserOption {
             socket: PathBuf::from(
@@ -1001,11 +1008,20 @@ impl DeviceTrait for VirtioHabDevices {
                         ),
         };
 
-        if !vhab.vhost_user_hab.socket.exists() {
-            return Err(argument::Error::InvalidValue {
-                value: param.to_owned(),
-                expected: String::from("vhost-user-hab socket path must be an existing path"),
-            });
+        loop {
+            if !vhab.vhost_user_hab.socket.exists() {
+                retries += 1;
+                if retries >= max_retries {
+                    return Err(argument::Error::InvalidValue {
+                        value: param.to_owned(),
+                        expected: String::from("vhost-user-hab socket path must be an existing path"),
+                    });
+                }
+                sleep(Duration::from_millis(RETRY_DELAY_MS));
+            } else {
+                info!("{} appears after retries {}", vhab.vhost_user_hab.socket.display(), retries);
+                break;
+            }
         }
 
         for opt in components {
@@ -1189,9 +1205,13 @@ impl DeviceTrait for VirtioConsoleDevices {
                 serial_path = Some(PathBuf::from(DEF_SERIAL_FILE));
             }
 
-            println!("The Final serial file is {}", serial_path.as_ref().unwrap().to_string_lossy());
+            if let Some(log_file) = serial_path.as_ref() {
+                if log_file.exists() {
+                    println!("Remove previous log file {}", log_file.to_string_lossy());
+                    fs::remove_file(log_file);
+                }
+            }
         }
-
         // Add a virtio-console device with console=true.
         vconsole.serial_params = SerialParameters {
             type_: serial_type,

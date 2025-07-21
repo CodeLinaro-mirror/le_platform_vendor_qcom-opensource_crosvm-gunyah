@@ -1,18 +1,24 @@
-# Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
 # SPDX-License-Identifier: BSD-3-Clause-Clear
 [Unit]
 Description=Service to start the Linux GVM
 # List of service unit dependencies
-After=qcrosvm.service vhost-user-scmi-lv.service
+Requires=vmm-pwr-key.service vhost-user-aud-vm3.service vhost-user-cam-vm3.service vhost-user-disp-vm3.service vhost-user-ext-vm3.service vhost-user-gpce-vm3.service vhost-user-gpu-vm3.service vhost-user-misc-vm3.service vhost-user-vid-vm3.service vhost-user-vnw-vm3.service
+After=qcrosvm.service vhost-user-scmi-lv.service vmm-pwr-key.service vhost-user-aud-vm3.service vhost-user-cam-vm3.service vhost-user-disp-vm3.service vhost-user-ext-vm3.service vhost-user-gpce-vm3.service vhost-user-gpu-vm3.service vhost-user-misc-vm3.service vhost-user-vid-vm3.service vhost-user-vnw-vm3.service
+# List of device unit dependencies
+Requires=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
+After=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
+Wants=gvm_net_config_lvgvm.service
 
 [Service]
 Type=simple
-ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b00 /firmware/vm/boot/autoghgvmlv.b00
-ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b01 /firmware/vm/boot/autoghgvmlv.b01
-ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b02 /firmware/vm/boot/autoghgvmlv.b02
-ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b03 /firmware/vm/boot/autoghgvmlv.b03
-ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b04 /firmware/vm/boot/autoghgvmlv.b04
-ExecStartPre=/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.mdt /firmware/vm/boot/autoghgvmlv.mdt
+Slice=gvm.slice
+ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b00 /firmware/vm/boot/autoghgvmlv.b00
+ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b01 /firmware/vm/boot/autoghgvmlv.b01
+ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b02 /firmware/vm/boot/autoghgvmlv.b02
+ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b03 /firmware/vm/boot/autoghgvmlv.b03
+ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b04 /firmware/vm/boot/autoghgvmlv.b04
+ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.mdt /firmware/vm/boot/autoghgvmlv.mdt
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvmlv \
 --use-non-protected-virtio \
@@ -44,7 +50,8 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-hab "/tmp/linux-vm3-cam-skt",label=11B,device-id=92,queue-num=4 \
 --vhost-user-hab "/tmp/linux-vm3-vnw-skt",label=11C,device-id=96,queue-num=2 \
 --vhost-user-hab "/tmp/linux-vm3-gpce-skt",label=11D,device-id=98,queue-num=2 \
---vhost-user-hab "/tmp/linux-vm3-ext-skt",label=11E,device-id=97,queue-num=2 \
+--vhost-user-hab "/tmp/linux-vm3-ext-skt",label=11E,device-id=97,queue-num=6 \
+--input=/dev/input/vmm-autoghgvmlv-pwr-key,label=120 \
 --console=/tmp/lv_gvm.txt,label=121 \
 --vhost-user-scmi "/tmp/pt-lv-dev-skt",label=123
 
