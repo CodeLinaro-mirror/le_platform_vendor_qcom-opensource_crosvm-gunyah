@@ -3,11 +3,12 @@
 [Unit]
 Description=Service to start the Linux GVM
 # List of service unit dependencies
-Requires=vmm-pwr-key.service
-After=qcrosvm.service vhost-user-scmi-lv.service vmm-pwr-key.service
+Requires=vmm-pwr-key.service vhost-user-aud-vm3.service vhost-user-cam-vm3.service vhost-user-disp-vm3.service vhost-user-ext-vm3.service vhost-user-gpce-vm3.service vhost-user-gpu-vm3.service vhost-user-misc-vm3.service vhost-user-vid-vm3.service vhost-user-vnw-vm3.service
+After=qcrosvm.service vhost-user-scmi-lv.service vmm-pwr-key.service vhost-user-aud-vm3.service vhost-user-cam-vm3.service vhost-user-disp-vm3.service vhost-user-ext-vm3.service vhost-user-gpce-vm3.service vhost-user-gpu-vm3.service vhost-user-misc-vm3.service vhost-user-vid-vm3.service vhost-user-vnw-vm3.service
 # List of device unit dependencies
 Requires=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
 After=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
+Wants=gvm_net_config_lvgvm.service
 
 [Service]
 Type=simple
