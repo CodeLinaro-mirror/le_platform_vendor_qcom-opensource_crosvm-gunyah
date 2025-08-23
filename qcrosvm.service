@@ -63,7 +63,8 @@ ExecStart=/usr/bin/qcrosvm \
 --input=/dev/input/usb1_touchscreen0,label=3F \
 --input=/dev/input/vmm-autoghgvm-pwr-key,label=40 \
 --console=/tmp/la_gvm.txt,label=41 \
---vsock cid=100,label=43
+--vsock cid=100,label=43 \
+--log level=error
 
 [Install]
 WantedBy = multi-user.target
