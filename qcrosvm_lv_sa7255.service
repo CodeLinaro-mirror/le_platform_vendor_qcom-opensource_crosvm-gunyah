@@ -7,12 +7,6 @@ Description=Service to start the Linux GVM
 [Service]
 Type=simple
 Slice=gvm.slice
-ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b00 /firmware/vm/boot/autoghgvmlv.b00
-ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b01 /firmware/vm/boot/autoghgvmlv.b01
-ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b02 /firmware/vm/boot/autoghgvmlv.b02
-ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b03 /firmware/vm/boot/autoghgvmlv.b03
-ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.b04 /firmware/vm/boot/autoghgvmlv.b04
-ExecStartPre=-/bin/ln -sf /firmware/lvgvm/boot/autoghgvmlv.mdt /firmware/vm/boot/autoghgvmlv.mdt
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvmlv \
 --use-non-protected-virtio \
@@ -36,6 +30,15 @@ ExecStart=/usr/bin/qcrosvm \
 --disk=/dev/disk/by-partlabel/lv_system_a,label=112,rw=true \
 --disk=/dev/disk/by-partlabel/lv_system_b,label=113,rw=true \
 --net=true,label=114,ip_addr=10.10.10.18,netmask=255.255.255.0,mac=5A:6F:66:05:FF:25,tapName=lvgvm0  \
+--vhost-user-hab "/tmp/linux-vm3-disp-skt",label=119,device-id=93,queue-num=10 \
+--vhost-user-hab "/tmp/linux-vm3-ogles-skt",label=116,device-id=94,queue-num=2 \
+--vhost-user-hab "/tmp/linux-vm3-misc-skt",label=117,device-id=90,queue-num=2 \
+--vhost-user-hab "/tmp/linux-vm3-aud-skt",label=118,device-id=91,queue-num=8 \
+--vhost-user-hab "/tmp/linux-vm3-vid-skt",label=11A,device-id=95,queue-num=6 \
+--vhost-user-hab "/tmp/linux-vm3-cam-skt",label=11B,device-id=92,queue-num=4 \
+--vhost-user-hab "/tmp/linux-vm3-vnw-skt",label=11C,device-id=96,queue-num=2 \
+--vhost-user-hab "/tmp/linux-vm3-gpce-skt",label=11D,device-id=98,queue-num=2 \
+--vhost-user-hab "/tmp/linux-vm3-ext-skt",label=11E,device-id=97,queue-num=6 \
 --console=/tmp/lv_gvm.txt,label=121
 
 [Install]

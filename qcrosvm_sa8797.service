@@ -3,12 +3,12 @@
 [Unit]
 Description=Service to start the Android GVM
 # List of service unit dependencies
-Requires=vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-ext.service vhost-user-gpce.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service vhost-device-ssr.service
-After=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-ext.service vhost-user-gpce.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service vhost-device-ssr.service
+Requires=vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-ext.service vhost-user-gpce.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service vhost-device-ssr.service vhost-device-i2c.service
+After=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-ext.service vhost-user-gpce.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service vhost-device-ssr.service vhost-device-i2c.service
 # List of device unit dependencies
 Requires=dev-input-vmm\x2dautoghgvm\x2dpwr\x2dkey.device
 After=dev-input-vmm\x2dautoghgvm\x2dpwr\x2dkey.device
-Wants=gvm_net_config.service
+Wants=gvm-net-config.service
 
 [Service]
 Type=simple
@@ -38,6 +38,8 @@ ExecStart=/usr/bin/qcrosvm \
 --disk=/dev/disk/by-partlabel/la_metadata,label=34,rw=true \
 --disk=/dev/disk/by-partlabel/la_userdata,label=35,rw=true \
 --disk=/dev/disk/by-partlabel/la_super,label=36,rw=true \
+--disk=/dev/disk/by-partlabel/la_bootloader_a,label=4E,rw=true \
+--disk=/dev/disk/by-partlabel/la_bootloader_b,label=4F,rw=true \
 --net=true,label=38,ip_addr=10.10.10.10,netmask=255.255.255.0,mac=4A:6F:F0:05:7C:24 \
 --net=true,label=37,ip_addr=10.10.10.11,netmask=255.255.255.0,mac=4A:6F:F0:05:7C:25 \
 --vhost-user-hab "/tmp/linux-vm2-vnw-skt",label=48,device-id=96,queue-num=2 \
@@ -55,6 +57,7 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-gp /tmp/gp_hello,label=44 \
 --vhost-user-frpc "/tmp/sock_file_frpc",label=45 \
 --vhost-user-ssr "/tmp/linux-vm2-ssr-skt0",label=47 \
+--vhost-user-i2c "/tmp/linux-vm2-i2c-skt0",label=51 \
 --console=/tmp/la_gvm.txt,label=41 \
 --vsock cid=100,label=43
 
