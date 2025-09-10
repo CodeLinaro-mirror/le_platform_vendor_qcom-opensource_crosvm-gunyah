@@ -17,9 +17,11 @@ DefaultDependencies = no
 [Service]
 Type=simple
 Slice=gvm.slice
+ExecStartPre=/bin/sh /usr/bin/qcrosvm.sh la
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvm \
 --use-non-protected-virtio \
+--disk=/tmp/la_gvminfo.img,label=20,rw=true \
 --disk=/dev/disk/by-partlabel/la_devinfo,label=21,rw=true \
 --disk=/dev/disk/by-partlabel/la_init_boot_a,label=22,rw=true \
 --disk=/dev/disk/by-partlabel/la_init_boot_b,label=23,rw=true \
