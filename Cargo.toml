@@ -10,8 +10,9 @@ name = "qcrosvm"
 path = "src/main.rs"
 [profile.release]
 overflow-checks = true
-#[features]
+[features]
 #default = []
+vhost-user-generic = ["devices/vhost-user-generic"]
 
 [dependencies]
 android_logger = { path = "../../../../external/rust/crates/android_logger" }
