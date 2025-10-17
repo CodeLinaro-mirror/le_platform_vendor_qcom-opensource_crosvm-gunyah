@@ -64,5 +64,8 @@ ExecStart=/usr/bin/qcrosvm \
 --console=/tmp/la_gvm.txt,label=41 \
 --vsock cid=100,label=43
 
+# Prevent this critical service from being killed by the OOM killer
+OOMScoreAdjust=-1000
+
 [Install]
 WantedBy = multi-user.target
