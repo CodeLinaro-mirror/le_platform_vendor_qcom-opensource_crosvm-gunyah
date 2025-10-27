@@ -48,14 +48,14 @@ use devices::virtio::block::block::DiskOption;
 use devices::virtio::vhost::user::vmm::{
     Hab as VhostUserHab, Scmi as VhostUserScmi, I2cAdapter as VhostUserI2cAdapter,
     GlinkPassthrough as VhostUserGP, Frpc as VhostUserfrpc, Ssr as VhostUserSsr,
-    Eavb as VhostUserEAVB, Fs as VhostUserfs,  Gpio as VhostUserGpio,
+    Eavb as VhostUserEAVB, Fs as VhostUserfs,  Gpio as VhostUserGpio, Compressched as VhostUsercompressched,
 };
 #[cfg(feature = "vhost-user-generic")]
 use devices::virtio::vhost::user::vmm::{
     Hab as VhostUserHab, Scmi as VhostUserScmi, I2cAdapter as VhostUserI2cAdapter,
     GlinkPassthrough as VhostUserGP, Frpc as VhostUserfrpc, Ssr as VhostUserSsr,
     Eavb as VhostUserEAVB, Fs as VhostUserfs, GenericDevice as VhostUserGeneric,
-    Gpio as VhostUserGpio,
+    Gpio as VhostUserGpio, Compressched as VhostUsercompressched,
 };
 
 use crosvm::{
@@ -1929,6 +1929,144 @@ impl DeviceTrait for VuVirtiofrpcDevices {
     }
 }
 
+
+struct VuVirtiocompressched {
+    label: u32,
+    mmio: Option<MmioDevice>,
+    config_space: Option<Vec<u32>>,
+    vhost_user_compressched: VhostUserOption,
+}
+
+impl VuVirtiocompressched {
+    pub fn new() -> Self {
+        VuVirtiocompressched {
+            label: 0,
+            mmio: None,
+            config_space: Some(Vec::new()),
+            vhost_user_compressched: VhostUserOption{
+                socket: PathBuf::new()
+            },
+        }
+    }
+}
+
+struct VuVirtiocompresschedDevices {
+    vu_compressched_devices: Vec<VuVirtiocompressched>,
+}
+impl VuVirtiocompresschedDevices {
+    pub fn new() -> Self {
+        VuVirtiocompresschedDevices { vu_compressched_devices: Vec::new() }
+    }
+    fn create_vucompressched_devices(&mut self, cfg: &mut BackendConfig) -> Result<(), BackendError> {
+
+        for vucompressched in &mut self.vu_compressched_devices {
+            let mem = cfg.mem.as_ref().expect(&format!("{}:{}", file!(), line!()));
+            let sfd :&SafeDescriptor;
+
+            match cfg.driver_variant {
+                1 => {sfd = cfg.sfd.as_ref().expect(&format!("{}:{}", file!(), line!()))}
+                2 => {sfd = cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!()))}
+                _ => return Err(BackendError::StrError(String::from("Unsupported driver variant.")))
+            };
+            let vucompresscheddev =  VhostUsercompressched::new(virtio::base_features(ProtectionType::Unprotected), &vucompressched.vhost_user_compressched.socket)
+                                .map_err(|_| BackendError::StrError(String::from("vhost compressched new failed")))?;
+
+            vucompressched.mmio = Some(MmioDevice::new(mem.clone(), Box::new(vucompresscheddev)).expect(&format!("{}:{}", file!(), line!())));
+            mmio_handle(&vucompressched.mmio, vucompressched.label, sfd, cfg)?;
+        }
+        Ok(())
+    }
+}
+
+impl DeviceTrait for VuVirtiocompresschedDevices {
+    fn create_and_run_devices(&mut self, cfg: &mut BackendConfig) -> Result<Vec<JoinHandle<()>>, ()> {
+        let handles = create_device_threads!(
+            self,
+            cfg,
+            &mut self.vu_compressched_devices,
+            VuVirtiocompresschedDevices::create_vucompressched_devices,
+            init_config_space
+        );
+        Ok(handles)
+    }
+
+    fn set_argument(&mut self, value: Option<&str>) -> argument::Result<()> {
+
+        let mut vucompressched = VuVirtiocompressched::new();
+
+        let param = value.expect(&format!("{}:{}", file!(), line!()));
+        let mut components = param.split(',');
+        let mut retries = 0;
+        let max_retries = RETRY_LIMIT;
+
+        vucompressched.vhost_user_compressched = VhostUserOption {
+                    socket: PathBuf::from(
+                        components
+                        .next()
+                        .ok_or_else(|| argument::Error::InvalidValue {
+                            value: param.to_owned(),
+                            expected: String::from("vhost-user-compressched socket path must be provided"),
+                        })?,
+                        ),
+        };
+
+        loop {
+            if !vucompressched.vhost_user_compressched.socket.exists() {
+                retries += 1;
+                if retries >= max_retries {
+                    return Err(argument::Error::InvalidValue {
+                        value: param.to_owned(),
+                        expected: String::from("vhost-user-compressched socket path must be an existing path"),
+                    });
+                }
+                sleep(Duration::from_millis(RETRY_DELAY_MS));
+            } else {
+                info!("{} appears after retries {}", vucompressched.vhost_user_compressched.socket.display(), retries);
+                break;
+            }
+        }
+
+        for opt in components {
+            let mut o = opt.splitn(2, '=');
+            let kind = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                value: opt.to_owned(),
+                expected: String::from("vhost-user-compressched options must not be empty"),
+            })?;
+
+            let value = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                value: opt.to_owned(),
+                expected: String::from("vhost-user-compressched options must be of the form `kind=value`"),
+            })?;
+
+            match kind {
+                "label" => {
+                    let label: u32 = u32::from_str_radix(value, 16)
+                        .map_err(|_| argument::Error::InvalidValue {
+                            value: value.to_owned(),
+                            expected: String::from("`label` must be an unsigned integer"),
+                        })?;
+                    if label == 0 {
+                        return Err(argument::Error::InvalidValue {
+                            value: value.to_owned(),
+                            expected: String::from("`label` must be a non zero integer"),
+                        });
+                    }
+                    vucompressched.label = label;
+                }
+                _ => {
+                    return Err(argument::Error::InvalidValue {
+                        value: kind.to_owned(),
+                        expected: String::from("vhost-user-compressched only supports label"),
+                    });
+                }
+            }
+        }
+
+        self.vu_compressched_devices.push(vucompressched);
+        Ok(())
+    }
+}
+
 ////// VU_VIRTIO_SSR //////
 struct VuVirtioSsr {
     label: u32,
@@ -2712,6 +2850,7 @@ struct VMBackend {
     vuvirtio_gpio_devices: VuVirtioGpioDevices,
     vsock_devices: VirtioSockDevices,
     veavb_devices: VirtioEAVBDevices,
+    vuvirtio_compressched_devices: VuVirtiocompresschedDevices,
     #[cfg(feature = "vhost-user-generic")]
     vugeneric_devices: VuVirtioGenericDevices,
 }
@@ -2736,6 +2875,7 @@ impl VMBackend {
             vuvirtio_gpio_devices: VuVirtioGpioDevices::new(),
             vsock_devices: VirtioSockDevices::new(),
             veavb_devices: VirtioEAVBDevices::new(),
+            vuvirtio_compressched_devices: VuVirtiocompresschedDevices::new(),
             #[cfg(feature = "vhost-user-generic")]
             vugeneric_devices: VuVirtioGenericDevices::new(),
         }
@@ -2868,6 +3008,10 @@ impl VMBackend {
             "vhost-user-eavb" => {
                 self.cfg.bkend_dev_exist = true;
                 self.veavb_devices.set_argument(value)?
+            }
+            "vhost-user-compressched" => {
+                self.cfg.bkend_dev_exist = true;
+                self.vuvirtio_compressched_devices.set_argument(value)?
             }
             #[cfg(feature = "vhost-user-generic")]
             "vhost-user-generic" => {
@@ -3030,10 +3174,11 @@ impl VMBackend {
             &mut self.vuvirtio_ssr_devices,
             &mut self.vuvirtio_gpio_devices,
             &mut self.vsock_devices,
+            &mut self.veavb_devices,
+            &mut self.vuvirtio_compressched_devices,
             #[cfg(feature = "vhost-user-generic")]
             &mut self.vugeneric_devices,
             &mut self.vcpus,    // vCPU create and run at the end
-            &mut self.veavb_devices,
         ];
 
         let mut device_thread_vecs = vec![];
@@ -3291,7 +3436,8 @@ fn print_usage() {
     [--vhost-user-gpio SOCKET_PATH,label=LABEL]
     [--console PATH,label=LABEL]
     [--vsock label=LABEL,cid=CONTEXT_ID]
-    [--vhost-user-eavb SOCKET_PATH,label=LABEL]");
+    [--vhost-user-eavb SOCKET_PATH,label=LABEL]
+    [--vhost-user-compressched SOCKET_PATH,label=LABEL]");
     #[cfg(feature = "vhost-user-generic")]
     println!("\t[--vhost-user-generic SOCKET_PATH,label=LABEL[,queue-num=QUEUE_NUM]]");
     println!("\t--vm=VMNAME");
@@ -3770,6 +3916,7 @@ fn parse_and_run(args: std::env::Args) -> Result<(), ()> {
         Argument::value("vhost-user-gp", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::value("vsock", "label=LABEL[,key=value", "label=LABEL,cid=context-id"),
         Argument::value("vhost-user-eavb", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
+        Argument::value("vhost-user-compressched", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         ];
 
     let mut vm = VMBackend::new();
