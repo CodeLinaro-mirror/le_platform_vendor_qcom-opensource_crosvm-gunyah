@@ -44,10 +44,17 @@ use std::sync::Arc;
 use std::convert::TryInto;
 
 use devices::virtio::block::block::DiskOption;
+#[cfg(not(feature = "vhost-user-generic"))]
 use devices::virtio::vhost::user::vmm::{
     Hab as VhostUserHab, Scmi as VhostUserScmi, I2cAdapter as VhostUserI2cAdapter,
     GlinkPassthrough as VhostUserGP, Frpc as VhostUserfrpc, Ssr as VhostUserSsr,
     Eavb as VhostUserEAVB, Fs as VhostUserfs
+};
+#[cfg(feature = "vhost-user-generic")]
+use devices::virtio::vhost::user::vmm::{
+    Hab as VhostUserHab, Scmi as VhostUserScmi, I2cAdapter as VhostUserI2cAdapter,
+    GlinkPassthrough as VhostUserGP, Frpc as VhostUserfrpc, Ssr as VhostUserSsr,
+    Eavb as VhostUserEAVB, Fs as VhostUserfs, GenericDevice as VhostUserGeneric,
 };
 
 use crosvm::{
@@ -1902,6 +1909,156 @@ impl DeviceTrait for VuVirtioSsrDevices {
     }
 }
 
+////// VU_VIRTIO_GENERIC //////
+#[cfg(feature = "vhost-user-generic")]
+struct VuVirtioGeneric {
+    label: u32,
+    mmio: Option<MmioDevice>,
+    config_space: Option<Vec<u32>>,
+    num_queues: Option<u64>,
+    vhost_user_generic: VhostUserOption,
+}
+
+#[cfg(feature = "vhost-user-generic")]
+impl VuVirtioGeneric {
+    pub fn new() -> Self {
+        VuVirtioGeneric{
+            label: 0,
+            num_queues: None,
+            mmio: None,
+            config_space: Some(Vec::new()),
+            vhost_user_generic: VhostUserOption {
+                socket: PathBuf::new(),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "vhost-user-generic")]
+struct VuVirtioGenericDevices {
+    vugeneric_devices: Vec<VuVirtioGeneric>,
+}
+
+#[cfg(feature = "vhost-user-generic")]
+impl VuVirtioGenericDevices {
+    pub fn new() -> Self {
+        VuVirtioGenericDevices {
+            vugeneric_devices: Vec::new()
+        }
+    }
+
+    pub fn create_vugeneric_devices(&mut self, cfg: &mut BackendConfig) -> Result<(), BackendError> {
+
+        for vgen in &mut self.vugeneric_devices {
+
+            let mem = cfg.mem.as_ref().expect(&format!("{}:{}", file!(), line!()));
+            let sfd: &SafeDescriptor;
+
+            match cfg.driver_variant {
+                1 => {sfd = cfg.sfd.as_ref().expect(&format!("{}:{}", file!(), line!()))}
+                2 => {sfd = cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!()))}
+                _ => return Err(BackendError::StrError(String::from("Unsupported driver variant.")))
+            };
+
+            let vu_generic_dev = VhostUserGeneric::new(virtio::base_features(ProtectionType::Unprotected), &vgen.vhost_user_generic.socket, vgen.num_queues)
+                    .map_err(|_| BackendError::StrError(String::from("vhost user generic new failed")))?;
+
+            vgen.mmio = Some(MmioDevice::new(mem.clone(), Box::new(vu_generic_dev)).expect(&format!("{}:{}", file!(), line!())));
+            mmio_handle(&vgen.mmio, vgen.label, sfd, cfg)?;
+        }
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "vhost-user-generic")]
+impl DeviceTrait for VuVirtioGenericDevices {
+    fn create_and_run_devices(&mut self, cfg: &mut BackendConfig) -> Result<Vec<JoinHandle<()>>, ()> {
+        let handles = create_device_threads!(
+            self,
+            cfg,
+            &mut self.vugeneric_devices,
+            VuVirtioGenericDevices::create_vugeneric_devices,
+            init_config_space
+        );
+        Ok(handles)
+    }
+
+    fn set_argument(&mut self, value: Option<&str>) -> argument::Result<()> {
+        let mut vgen = VuVirtioGeneric::new();
+
+        let param = value.expect(&format!("{}:{}", file!(), line!()));
+        let mut components = param.split(',');
+
+        vgen.vhost_user_generic = VhostUserOption {
+            socket: PathBuf::from(
+                        components
+                        .next()
+                        .ok_or_else(|| argument::Error::InvalidValue {
+                            value: param.to_owned(),
+                            expected: String::from("vhost-user-generic socket path must be provided"),
+                        })?,
+                        ),
+        };
+
+        if !vgen.vhost_user_generic.socket.exists() {
+            return Err(argument::Error::InvalidValue {
+                value: param.to_owned(),
+                expected: String::from("vhost-user-generic socket path must be an existing path"),
+            });
+        }
+
+        for opt in components {
+            let mut o = opt.splitn(2, '=');
+            let kind = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                value: opt.to_owned(),
+                expected: String::from("vhost-user-generic options must not be empty"),
+            })?;
+
+            let value = o.next().ok_or_else(|| argument::Error::InvalidValue {
+                value: opt.to_owned(),
+                expected: String::from("vhost-user-generic options must be of the form `kind=value`"),
+            })?;
+
+            match kind {
+                "label" => {
+                    let label: u32 = u32::from_str_radix(value, 16)
+                            .map_err(|_| argument::Error::InvalidValue {
+                                value: value.to_owned(),
+                                expected: String::from("`label` must be an unsigned integer"),
+                                })?;
+                    if label == 0 {
+                        return Err(argument::Error::InvalidValue {
+                            value: value.to_owned(),
+                            expected: String::from("`label` must be a non zero integer"),
+                            });
+                        }
+                    vgen.label = label;
+                }
+                "queue-num" => {
+                    let num_of_queues: u64;
+                    num_of_queues = value.parse().map_err(|_| argument::Error::InvalidValue {
+                        value: value.to_owned(),
+                        expected: String::from("queue number must be an unsigned integer "),
+                    })?;
+                    vgen.num_queues = Some(num_of_queues)
+                }
+
+                _ => {
+                    return Err(argument::Error::InvalidValue {
+                        value: kind.to_owned(),
+                        expected: String::from("supported vhost-user-generic options only"),
+                    });
+                }
+            }
+        }
+
+        self.vugeneric_devices.push(vgen);
+        Ok(())
+
+    }
+}
+
 ////// VCPU //////
 struct Vcpu {
     id: u8,
@@ -2401,6 +2558,8 @@ struct VMBackend {
     vuvirtio_ssr_devices: VuVirtioSsrDevices,
     vsock_devices: VirtioSockDevices,
     veavb_devices: VirtioEAVBDevices,
+    #[cfg(feature = "vhost-user-generic")]
+    vugeneric_devices: VuVirtioGenericDevices,
 }
 
 impl VMBackend {
@@ -2422,6 +2581,8 @@ impl VMBackend {
             vuvirtio_ssr_devices: VuVirtioSsrDevices::new(),
             vsock_devices: VirtioSockDevices::new(),
             veavb_devices: VirtioEAVBDevices::new(),
+            #[cfg(feature = "vhost-user-generic")]
+            vugeneric_devices: VuVirtioGenericDevices::new(),
         }
     }
 
@@ -2548,6 +2709,11 @@ impl VMBackend {
             "vhost-user-eavb" => {
                 self.cfg.bkend_dev_exist = true;
                 self.veavb_devices.set_argument(value)?
+            }
+            #[cfg(feature = "vhost-user-generic")]
+            "vhost-user-generic" => {
+                self.cfg.bkend_dev_exist = true;
+                self.vugeneric_devices.set_argument(value)?
             }
             _ => unreachable!(),
         }
@@ -2704,6 +2870,8 @@ impl VMBackend {
             &mut self.vuvirtio_frpc_devices,
             &mut self.vuvirtio_ssr_devices,
             &mut self.vsock_devices,
+            #[cfg(feature = "vhost-user-generic")]
+            &mut self.vugeneric_devices,
             &mut self.vcpus,    // vCPU create and run at the end
             &mut self.veavb_devices,
         ];
@@ -2962,8 +3130,10 @@ fn print_usage() {
     [--vhost-user-ssr SOCKET_PATH,label=LABEL]
     [--console PATH,label=LABEL]
     [--vsock label=LABEL,cid=CONTEXT_ID]
-    [--vhost-user-eavb SOCKET_PATH,label=LABEL]
-    --vm=VMNAME");
+    [--vhost-user-eavb SOCKET_PATH,label=LABEL]");
+    #[cfg(feature = "vhost-user-generic")]
+    println!("\t[--vhost-user-generic SOCKET_PATH,label=LABEL[,queue-num=QUEUE_NUM]]");
+    println!("\t--vm=VMNAME");
     println!("\n[-l] or [--log=[level=trace|debug|info|warn|error],[type=ftrace|logcat|term]]");
     println!("Default logger level: info");
     println!("Default logger type: ftrace");
@@ -3421,6 +3591,8 @@ fn parse_and_run(args: std::env::Args) -> Result<(), ()> {
         Argument::value("vhost-user-scmi", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::value("vhost-user-i2c", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::value("vhost-user-fs", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
+        #[cfg(feature = "vhost-user-generic")]
+        Argument::value("vhost-user-generic", "SOCKET_PATH", "label=LABEL[,queue-num=N]"),
         Argument::value("vhost-user-frpc", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::value("vhost-user-ssr", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::short_value('n',"net","label=LABEL[,key=value[,key=value[,key=value[,...]]]]","net device followed by comma-separated options.
