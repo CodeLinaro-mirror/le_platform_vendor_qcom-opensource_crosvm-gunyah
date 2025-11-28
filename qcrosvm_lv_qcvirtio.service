@@ -10,6 +10,19 @@ After=qcrosvm.service vmm-pwr-key.service
 Requires=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
 After=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
 
+Requires=coqos-virtio-blk-agl.service \
+	coqos-virtio-gpu-virgl-agl.service \
+	coqos-virtio-net-agl.service \
+	coqos-virtio-console-agl.service \
+	coqos-virtio-rng-agl.service \
+	coqos-virtio-vsock-agl.service
+After=coqos-virtio-blk-agl.service \
+	coqos-virtio-gpu-virgl-agl.service \
+	coqos-virtio-net-agl.service \
+	coqos-virtio-console-agl.service \
+	coqos-virtio-rng-agl.service \
+	coqos-virtio-vsock-agl.service
+
 [Service]
 Type=simple
 Slice=gvm.slice
