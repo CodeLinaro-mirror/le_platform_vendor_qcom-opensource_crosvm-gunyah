@@ -62,7 +62,8 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-ssr "/tmp/linux-vm2-ssr-skt0",label=47 \
 --vhost-user-i2c "/tmp/linux-vm2-i2c-skt0",label=51 \
 --console=/tmp/la_gvm.txt,label=41 \
---vsock cid=100,label=43
+--vsock cid=100,label=43 \
+--log level=error
 
 # Prevent this critical service from being killed by the OOM killer
 OOMScoreAdjust=-1000
