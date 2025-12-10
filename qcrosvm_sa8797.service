@@ -61,6 +61,8 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-frpc "/tmp/sock_file_frpc",label=45 \
 --vhost-user-ssr "/tmp/linux-vm2-ssr-skt0",label=47 \
 --vhost-user-i2c "/tmp/linux-vm2-i2c-skt0",label=51 \
+--vhost-user-eavb "/tmp/linux-vm2-eavb-skt",label=52 \
+--vhost-user-gpio "/tmp/linux-vm2-gpio-skt0",label=53 \
 --console=/tmp/la_gvm.txt,label=41 \
 --vsock cid=100,label=43
 
