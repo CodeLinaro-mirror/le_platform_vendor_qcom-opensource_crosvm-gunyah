@@ -402,7 +402,7 @@ impl DeviceTrait for VirtioDiskDevices {
                             expected: String::from("`block_size` must be an integer"),
                         })?;
                     match block_size {
-                        512 | 1024 => vdisk.disk.block_size = block_size,
+                        512 | 1024 | 4096 => vdisk.disk.block_size = block_size,
                         _ => {
                             return Err(argument::Error::InvalidValue {
                                 value: value.to_owned(),
