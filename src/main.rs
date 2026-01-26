@@ -95,6 +95,7 @@ const EVENT_INTERRUPT_ACK: u32 = 4;
 const EVENT_DRIVER_OK: u32 = 8;
 const EVENT_APP_EXIT: u32 = 0x100;
 
+const VIRTIO_MMIO_DEVICE_ID: u64 = 0x08;
 const VIRTIO_MMIO_DEVICE_FEATURES: u64 = 0x10;
 const VIRTIO_MMIO_DEVICE_FEATURES_SEL: u64 = 0x14;
 const VIRTIO_MMIO_DRIVER_FEATURES: u64 = 0x20;
@@ -112,6 +113,7 @@ const VIRTIO_MMIO_QUEUE_USED_LOW: u64 = 0xa0;
 const VIRTIO_MMIO_QUEUE_USED_HIGH: u64 = 0xa4;
 const VIRTIO_MMIO_STATUS: u64 = 0x70;
 const VIRTIO_MMIO_STATUS_IDX: u64 = 28;
+const VIRTIO_ID_INPUT: u32 = 18;
 const VIRTIO_MMIO_INPUT_SEL: u64 = 0x100;
 const VIRTIO_MMIO_DEVICE_CONFIG: u64 = 0x100;
 
@@ -2081,6 +2083,16 @@ impl VuVirtioGenericDevices {
 
             vgen.mmio = Some(MmioDevice::new(mem.clone(), Box::new(vu_generic_dev)).expect(&format!("{}:{}", file!(), line!())));
             mmio_handle(&vgen.mmio, vgen.label, sfd, cfg)?;
+            if let Some(mmio) = &mut vgen.mmio {
+                let mut device_id = [0u8; 4];
+                mmio.read(VIRTIO_MMIO_DEVICE_ID as u64, &mut device_id);
+
+                if device_id == VIRTIO_ID_INPUT.to_le_bytes() {
+                    let mut sfd = cfg.vm_sfd.as_mut().expect(&format!("{}:{}", file!(), line!())).try_clone()
+                        .expect(&format!("{}:{}", file!(), line!()));
+                    init_input_config(vgen.label, mmio, &mut sfd, cfg.driver_variant);
+                }
+            }
         }
 
         Ok(())
@@ -3334,7 +3346,7 @@ impl VirtioInputConfig {
         */
         mmio.read(VIRTIO_MMIO_DEVICE_CONFIG as u64, &mut data);
         assert!((data[0] == sel) && (data[1] == subsel) && (data[2] <= 128),
-            "failed to get config for input sel:{} subsel:{}!", sel, subsel);
+            "failed to get config for input sel:{} subsel:{} data{:?}!", sel, subsel, &data[..3]);
         VirtioInputConfig {
             sel: data[0],
             subsel: data[1],
@@ -3375,7 +3387,7 @@ fn init_input_config(label: u32, mmio: &mut MmioDevice, sfd: &mut SafeDescriptor
 
     // get PROPBITS- 0x10
     let config = VirtioInputConfig::gen_config(mmio, VIRTIO_INPUT_CFG_PROP_BITS, 0);
-    assert!(config.size <= 4, "prop bits size is not correct!");
+    assert!(config.size <= 8, "prop bits size is not correct!");
 
     vinputdc._prop_bits = u32::from_le_bytes(config.payload[0..4].try_into().unwrap());
     debug!("{}", format!("prop bits is {:#x}", vinputdc._prop_bits));
