@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: BSD-3-Clause-Clear
 [Unit]
 Description=Service to start the Linux GVM with Qclinux
-Requires=vhost-user-scmi-qclinux-lv.service vhost-device-ssr_lv.service vmm_drv.service
-After=vhost-user-scmi-qclinux-lv.service vhost-device-ssr_lv.service vmm_drv.service
+Requires=vhost-user-scmi-qclinux-lv.service vhost-device-ssr_lv.service vmm_drv.service vhost-user-glinkpassthrough-lv.service vhost-user-frpc_lv.service
+After=vhost-user-scmi-qclinux-lv.service vhost-device-ssr_lv.service vmm_drv.service vhost-user-glinkpassthrough-lv.service vhost-user-frpc_lv.service
 # List of service unit dependencies
 # List of device unit dependencies
 [Service]
@@ -37,6 +37,8 @@ ExecStart=/usr/bin/qcrosvm \
 --console=/tmp/lv_gvm.txt,label=121 \
 --vhost-user-scmi "/tmp/pt-lv-dev-skt",label=123 \
 --vhost-user-ssr "/tmp/linux-vm3-ssr-skt0",label=129 \
+--vhost-user-gp "/tmp/gp_lv",label=12A \
+--vhost-user-frpc "/tmp/sock_file_frpc_lv",label=12B \
 --log=level=debug
 
 ExecStartPost=-/bin/sh -c 'sleep 3; brctl addif br0 vmtap-lvgvm0'
