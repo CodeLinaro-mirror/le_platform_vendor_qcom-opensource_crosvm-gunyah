@@ -10,6 +10,10 @@ Requires=dev-input-vmm\x2dautoghgvm\x2dpwr\x2dkey.device
 After=dev-input-vmm\x2dautoghgvm\x2dpwr\x2dkey.device
 Wants=gvm-net-config.service
 
+Conflicts = shutdown.target
+Before = shutdown.target
+DefaultDependencies = no
+
 [Service]
 Type=simple
 Slice=gvm.slice
