@@ -10,18 +10,24 @@ After=qcrosvm.service vmm-pwr-key.service
 Requires=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
 After=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
 
-Requires=coqos-virtio-blk-agl.service \
-	coqos-virtio-gpu-virgl-agl.service \
-	coqos-virtio-net-agl.service \
-	coqos-virtio-console-agl.service \
-	coqos-virtio-rng-agl.service \
-	coqos-virtio-vsock-agl.service
-After=coqos-virtio-blk-agl.service \
-	coqos-virtio-gpu-virgl-agl.service \
-	coqos-virtio-net-agl.service \
-	coqos-virtio-console-agl.service \
-	coqos-virtio-rng-agl.service \
-	coqos-virtio-vsock-agl.service
+Requires=qcvirtio-blk-agl.service \
+	qcvirtio-gpu-opengl-agl.service \
+	qcvirtio-net-agl.service \
+	qcvirtio-console-agl.service \
+	qcvirtio-rng-agl.service \
+	qcvirtio-vsock-agl.service \
+	qcvirtio-gpio-agl.service \
+	qcvirtio-spi-agl.service \
+	qcvirtio-can-agl.service
+After=qcvirtio-blk-agl.service \
+	qcvirtio-gpu-opengl-agl.service \
+	qcvirtio-net-agl.service \
+	qcvirtio-console-agl.service \
+	qcvirtio-rng-agl.service \
+	qcvirtio-vsock-agl.service \
+	qcvirtio-gpio-agl.service \
+	qcvirtio-spi-agl.service \
+	qcvirtio-can-agl.service
 
 [Service]
 Type=simple
@@ -46,7 +52,10 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-generic "/tmp/linux-vm3-net-skt",label=126 \
 --vhost-user-generic "/tmp/linux-vm3-con-skt",label=127 \
 --vhost-user-generic "/tmp/linux-vm3-rng-skt",label=129 \
---vhost-user-generic "/tmp/linux-vm3-vsk-skt",label=130
+--vhost-user-generic "/tmp/linux-vm3-vsk-skt",label=12A \
+--vhost-user-generic "/tmp/linux-vm3-gpio-skt",label=12B \
+--vhost-user-generic "/tmp/linux-vm3-spi-skt",label=12D \
+--vhost-user-generic "/tmp/linux-vm3-can-skt",label=12E
 
 [Install]
 WantedBy = multi-user.target
