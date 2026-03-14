@@ -3,6 +3,7 @@
 [Unit]
 Description=Service to start the Linux GVM
 # List of service unit dependencies
+Wants=gvm_net_config_lvgvm.service
 
 [Service]
 Type=simple
