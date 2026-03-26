@@ -23,10 +23,6 @@ AWE_VARIANT="lemans.adsp.aweQ"
 AR_VARIANT="lemans.adsp.prodQ"
 GVMINFO_IMG_SIZE=4096
 
-DEVICE="/dev/input/usb1_touchscreen0"
-TIMEOUT=10
-INTERVAL=0.5
-
 gvm_variant=$1
 echo "$0 Setup /tmp/${gvm_variant}_gvminfo.img"
 
@@ -63,16 +59,3 @@ mv seg1.img /tmp/${gvm_variant}_gvminfo.img
 rm -rf seg1.img seg2.img
 
 cd -
-
-elapsed=0
-while [ $(echo "$elapsed < $TIMEOUT" | bc) -eq 1 ]; do
-  if [ -e "$DEVICE" ]; then
-    echo "[$(date)] touch device $DEVICE available"
-    exit 0
-  fi
-  sleep $INTERVAL
-  elapsed=$(echo "$elapsed + $INTERVAL" | bc)
-done
-
-echo "[$(date)] $TIMEOUT timeout and no $DEVICE available"
-exit 0
