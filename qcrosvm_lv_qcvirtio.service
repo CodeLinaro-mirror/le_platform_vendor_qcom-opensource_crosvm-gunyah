@@ -13,6 +13,7 @@ Requires=qcvirtio-blk-agl.service \
 	qcvirtio-rng-agl.service \
 	qcvirtio-vsock-agl.service \
 	qcvirtio-gpio-agl.service \
+	qcvirtio-scmi-agl.service \
 	qcvirtio-spi-agl.service \
 	qcvirtio-can-agl.service \
 	qcvirtio-i2c-agl.service
@@ -24,6 +25,7 @@ After=qcvirtio-blk-agl.service \
 	qcvirtio-rng-agl.service \
 	qcvirtio-vsock-agl.service \
 	qcvirtio-gpio-agl.service \
+	qcvirtio-scmi-agl.service \
 	qcvirtio-spi-agl.service \
 	qcvirtio-can-agl.service \
 	qcvirtio-camera-agl.service \
