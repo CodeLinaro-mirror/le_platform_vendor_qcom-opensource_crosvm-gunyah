@@ -14,7 +14,8 @@ Requires=qcvirtio-blk-agl.service \
 	qcvirtio-vsock-agl.service \
 	qcvirtio-gpio-agl.service \
 	qcvirtio-spi-agl.service \
-	qcvirtio-can-agl.service
+	qcvirtio-can-agl.service \
+	qcvirtio-i2c-agl.service
 Wants=qcvirtio-camera-agl.service
 After=qcvirtio-blk-agl.service \
 	qcvirtio-gpu-opengl-agl.service \
@@ -25,7 +26,8 @@ After=qcvirtio-blk-agl.service \
 	qcvirtio-gpio-agl.service \
 	qcvirtio-spi-agl.service \
 	qcvirtio-can-agl.service \
-	qcvirtio-camera-agl.service
+	qcvirtio-camera-agl.service \
+	qcvirtio-i2c-agl.service
 
 [Service]
 Type=simple
