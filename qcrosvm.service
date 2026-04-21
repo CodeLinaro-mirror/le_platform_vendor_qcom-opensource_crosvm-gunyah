@@ -3,21 +3,23 @@
 [Unit]
 Description=Service to start the Android GVM
 # List of service unit dependencies
-Requires=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-ext.service vhost-user-gpce.service qcx_be_server.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-eavb.service systemd-udev-trigger.service
-After=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-ext.service vhost-user-gpce.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-eavb.service systemd-udev-trigger.service
+Requires=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-ext.service vhost-user-gpce.service qcx_be_server.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-eavb.service
+After=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-ext.service vhost-user-gpce.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-eavb.service disksymlink.service
 # List of device unit dependencies
 Requires=dev-input-vmm\x2dautoghgvm\x2dpwr\x2dkey.device
-After=dev-input-vmm\x2dautoghgvm\x2dpwr\x2dkey.device dev-input-usb1_touchscreen0.device
-Wants=gvm_net_config.service dev-input-usb1_touchscreen0.device
+After=dev-input-vmm\x2dautoghgvm\x2dpwr\x2dkey.device
+Wants=gvm_net_config.service
 
 Conflicts = shutdown.target
-Before = shutdown.target
+Before = shutdown.target systemd-udev-trigger.service
 DefaultDependencies = no
 
 [Service]
 Type=simple
 Slice=gvm.slice
 ExecStartPre=/bin/sh /usr/bin/qcrosvm.sh la
+ExecStartPre=-udevadm trigger --tag-match=touchscreen
+ExecStartPre=-/usr/bin/udevadm wait --timeout=5 /dev/input/usb1_touchscreen0
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvm \
 --use-non-protected-virtio \
