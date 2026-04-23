@@ -47,6 +47,7 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-hab "/tmp/linux-vm2-gpce-skt",label=49,device-id=98,queue-num=2 \
 --vhost-user-hab "/tmp/linux-vm2-ext-skt",label=4A,device-id=97,queue-num=6 \
 --vhost-user-scmi "/tmp/pt-dev-skt",label=42 \
+--vsock cid=100,label=43 \
 --input=/dev/input/vmm-autoghgvm-pwr-key,label=40 \
 --vhost-user-ssr "/tmp/linux-vm2-ssr-skt0",label=47 \
 --vhost-user-gp /tmp/gp_hello,label=44 \
