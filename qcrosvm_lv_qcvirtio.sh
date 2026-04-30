@@ -92,8 +92,13 @@ add_service_if_ready() {
 
 # Add qcvirtio-camera device if service not failed
 add_service_if_ready -w 0.2 -i 0.1 \
-	qcvirtio-camera-agl.service \
+    qcvirtio-camera-agl.service \
     "--vhost-user-generic /tmp/linux-vm3-viocam-skt,label=130,queue-num=2"
+
+# Add qcvirtio-input device if service not failed
+add_service_if_ready -w 0.2 -i 0.1 \
+    qcvirtio-input-agl.service \
+    "--vhost-user-generic /tmp/linux-vm3-input-skt,label=128"
 
 echo "Starting qcrosvm:"
 echo "${ARGS}"
