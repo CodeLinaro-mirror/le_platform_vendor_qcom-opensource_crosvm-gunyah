@@ -3,6 +3,10 @@
 [Unit]
 Description=Service to start the Android GVM (disabled)
 
+Conflicts = shutdown.target
+Before = shutdown.target
+DefaultDependencies = no
+
 [Service]
 Type=oneshot
 ExecStart=/bin/true
