@@ -3,8 +3,9 @@
 [Unit]
 Description=Service to start the Android GVM
 # List of service unit dependencies
-Requires=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service hyp-video-be.service qcx_be_server.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-glinkpassthrough.service vhost-user-frpc.service
-After=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-glinkpassthrough.service vhost-user-frpc.service
+Requires=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-gpce.service vhost-user-ext.service hyp-video-be.service qcx_be_server.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-glinkpassthrough.service vhost-user-frpc.service
+After=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-gpce.service vhost-user-ext.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-glinkpassthrough.service vhost-user-frpc.service
+Wants=gvm_net_config.service
 
 [Service]
 Type=simple
@@ -34,6 +35,8 @@ ExecStart=/usr/bin/qcrosvm \
 --disk=/dev/disk/by-partlabel/la_metadata,label=34,rw=true \
 --disk=/dev/disk/by-partlabel/la_userdata,label=35,rw=true \
 --disk=/dev/disk/by-partlabel/la_super,label=36,rw=true \
+--disk=/dev/disk/by-partlabel/la_bootloader_a,label=4B,rw=true \
+--disk=/dev/disk/by-partlabel/la_bootloader_b,label=4C,rw=true \
 --net=true,label=38,ip_addr=10.10.10.10,netmask=255.255.255.0,mac=5A:6F:F0:05:7C:24 \
 --net=true,label=37,ip_addr=10.10.10.11,netmask=255.255.255.0,mac=4A:6F:F0:05:7C:25 \
 --vhost-user-hab "/tmp/linux-vm2-disp-skt",label=3C,device-id=93,queue-num=10 \
@@ -42,7 +45,12 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-hab "/tmp/linux-vm2-aud-skt",label=3B,device-id=91,queue-num=8 \
 --vhost-user-hab "/tmp/linux-vm2-vid-skt",label=3D,device-id=95,queue-num=6 \
 --vhost-user-hab "/tmp/linux-vm2-cam-skt",label=3E,device-id=92,queue-num=4 \
+--vhost-user-hab "/tmp/linux-vm2-vnw-skt",label=48,device-id=96,queue-num=2 \
+--vhost-user-hab "/tmp/linux-vm2-gpce-skt",label=49,device-id=98,queue-num=2 \
+--vhost-user-hab "/tmp/linux-vm2-ext-skt",label=4A,device-id=97,queue-num=6 \
 --vhost-user-scmi "/tmp/pt-dev-skt",label=42 \
+--vsock cid=100,label=43 \
+--input=/dev/input/vmm-autoghgvm-pwr-key,label=40 \
 --vhost-user-ssr "/tmp/linux-vm2-ssr-skt0",label=47 \
 --vhost-user-gp /tmp/gp_hello,label=44 \
 --vhost-user-frpc "/tmp/sock_file_frpc",label=45 \
