@@ -3,6 +3,12 @@
 [Unit]
 Description=Service to start the Linux GVM
 # List of service unit dependencies
+Requires=vmm-pwr-key.service
+After=vmm-pwr-key.service
+Wants=gvm_net_config_lvgvm.service
+# List of device unit dependencies
+Requires=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
+After=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
 
 [Service]
 Type=simple
@@ -39,6 +45,7 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-hab "/tmp/linux-vm3-vnw-skt",label=11C,device-id=96,queue-num=2 \
 --vhost-user-hab "/tmp/linux-vm3-gpce-skt",label=11D,device-id=98,queue-num=2 \
 --vhost-user-hab "/tmp/linux-vm3-ext-skt",label=11E,device-id=97,queue-num=6 \
+--input=/dev/input/vmm-autoghgvmlv-pwr-key,label=120 \
 --console=/tmp/lv_gvm.txt,label=121
 
 [Install]
