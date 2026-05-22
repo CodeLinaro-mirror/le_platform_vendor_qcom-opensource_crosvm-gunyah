@@ -15,7 +15,6 @@ ARGS="--vm=autoghgvmlv \
 --disk=/dev/disk/by-partlabel/lv_vbmeta_b,label=10D,rw=true \
 --disk=/dev/disk/by-partlabel/lv_system_a,label=112,rw=true \
 --disk=/dev/disk/by-partlabel/lv_system_b,label=113,rw=true \
---input=/dev/input/vmm-autoghgvmlv-pwr-key,label=120 \
 --vhost-user-generic "/tmp/linux-vm3-blk-skt",label=111 \
 --vhost-user-generic "/tmp/linux-vm3-gpu-skt",label=114,queue-num=2 \
 --vhost-user-generic "/tmp/linux-vm3-net-skt",label=126 \
@@ -29,7 +28,8 @@ ARGS="--vm=autoghgvmlv \
 --vhost-user-generic "/tmp/linux-vm3-i2c-skt",label=131 \
 --vhost-user-generic "/tmp/linux-vm3-dec-skt",label=133 \
 --vhost-user-generic "/tmp/linux-vm3-enc-skt",label=134 \
---vhost-user-generic "/tmp/linux-vm3-rtc-skt",label=135
+--vhost-user-generic "/tmp/linux-vm3-rtc-skt",label=135 \
+--vhost-user-generic "/tmp/linux-vm3-input-skt",label=120
 "
 
 wait_for_service() {
@@ -99,11 +99,6 @@ add_service_if_ready() {
 add_service_if_ready -w 0.2 -i 0.1 \
     qcvirtio-camera-agl.service \
     "--vhost-user-generic /tmp/linux-vm3-viocam-skt,label=130,queue-num=2"
-
-# Add qcvirtio-input device if service not failed
-add_service_if_ready -w 0.2 -i 0.1 \
-    qcvirtio-input-agl.service \
-    "--vhost-user-generic /tmp/linux-vm3-input-skt,label=128"
 
 echo "Starting qcrosvm:"
 echo "${ARGS}"
