@@ -27,6 +27,8 @@ ARGS="--vm=autoghgvmlv \
 --vhost-user-generic "/tmp/linux-vm3-spi-skt",label=12D \
 --vhost-user-generic "/tmp/linux-vm3-can-skt",label=12E \
 --vhost-user-generic "/tmp/linux-vm3-i2c-skt",label=131 \
+--vhost-user-generic "/tmp/linux-vm3-dec-skt",label=133 \
+--vhost-user-generic "/tmp/linux-vm3-enc-skt",label=134
 "
 
 wait_for_service() {

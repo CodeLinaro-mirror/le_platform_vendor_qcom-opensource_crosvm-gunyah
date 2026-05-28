@@ -16,7 +16,9 @@ Requires=qcvirtio-blk-agl.service \
 	qcvirtio-scmi-agl.service \
 	qcvirtio-spi-agl.service \
 	qcvirtio-can-agl.service \
-	qcvirtio-i2c-agl.service
+	qcvirtio-i2c-agl.service \
+	qcvirtio-video-decoder-agl.service \
+	qcvirtio-video-encoder-agl.service
 Wants=qcvirtio-camera-agl.service
 After=qcvirtio-blk-agl.service \
 	qcvirtio-gpu-opengl-agl.service \
@@ -29,7 +31,9 @@ After=qcvirtio-blk-agl.service \
 	qcvirtio-spi-agl.service \
 	qcvirtio-can-agl.service \
 	qcvirtio-camera-agl.service \
-	qcvirtio-i2c-agl.service
+	qcvirtio-i2c-agl.service \
+	qcvirtio-video-decoder-agl.service \
+	qcvirtio-video-encoder-agl.service
 
 [Service]
 Type=simple
