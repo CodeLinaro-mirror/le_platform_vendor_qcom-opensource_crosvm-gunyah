@@ -3,8 +3,6 @@
 
 [Unit]
 Description=Service to start the AGL GVM
-Requires=vmm-pwr-key.service dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
-After=vmm-pwr-key.service dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
 
 Requires=qcvirtio-blk-agl.service \
 	qcvirtio-gpu-opengl-agl.service \
@@ -19,10 +17,10 @@ Requires=qcvirtio-blk-agl.service \
 	qcvirtio-i2c-agl.service \
 	qcvirtio-video-decoder-agl.service \
 	qcvirtio-video-encoder-agl.service \
-	qcvirtio-rtc-agl.service
-
-Wants=qcvirtio-camera-agl.service \
+	qcvirtio-rtc-agl.service \
 	qcvirtio-input-agl.service
+
+Wants=qcvirtio-camera-agl.service
 
 After=qcvirtio-blk-agl.service \
 	qcvirtio-gpu-opengl-agl.service \
