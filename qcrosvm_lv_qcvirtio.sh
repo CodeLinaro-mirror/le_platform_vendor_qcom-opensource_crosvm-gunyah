@@ -38,26 +38,30 @@ wait_for_service() {
     local interval="$3"
 
     local elapsed=0
+    local state=""
 
     echo "Waiting for $svc (timeout=${wait_time}s, interval=${interval}s)"
 
-    while true; do
+    while awk "BEGIN {exit !($elapsed < $wait_time)}"; do
         state=$(systemctl is-active "$svc" 2>/dev/null)
+        echo " -> $svc state=$state elapsed=${elapsed}s"
 
-        if [ "$state" = "active" ]; then
-            echo " -> $svc is active"
-            return 0
-        fi
-
-        # timeout check
-        if ! awk "BEGIN {exit !($elapsed < $wait_time)}"; then
-            echo " -> timeout (last state: $state)"
+        if [ "$state" = "failed" ]; then
             return 1
         fi
 
         sleep "$interval"
         elapsed=$(awk "BEGIN {print $elapsed + $interval}")
     done
+
+    echo " -> timeout (last state: $state)"
+
+    if [ "$state" = "active" ]; then
+        #echo " -> $svc is active"
+        return 0
+    fi
+
+    return 1
 }
 
 add_service_if_ready() {
