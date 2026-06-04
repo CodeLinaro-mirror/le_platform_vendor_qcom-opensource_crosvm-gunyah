@@ -29,7 +29,8 @@ ARGS="--vm=autoghgvmlv \
 --vhost-user-generic "/tmp/linux-vm3-dec-skt",label=133 \
 --vhost-user-generic "/tmp/linux-vm3-enc-skt",label=134 \
 --vhost-user-generic "/tmp/linux-vm3-rtc-skt",label=135 \
---vhost-user-generic "/tmp/linux-vm3-input-skt",label=120
+--vhost-user-generic "/tmp/linux-vm3-input-skt",label=120 \
+--vhost-user-generic "/tmp/linux-vm3-usb-skt",label=136
 "
 
 wait_for_service() {
