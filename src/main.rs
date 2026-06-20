@@ -13,8 +13,9 @@ use std::fs;
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::io::{RawFd, FromRawFd};
+use std::os::unix::net::UnixStream;
+use std::io::{self, Write};
 use std::thread;
-use std::io;
 use std::fmt::{self, Display};
 use std::str::FromStr;
 use std::thread::JoinHandle;
@@ -2351,6 +2352,88 @@ impl DeviceTrait for VuVirtioGenericDevices {
 }
 
 ////// VCPU //////
+
+/// Send a file descriptor over a Unix socket using SCM_RIGHTS ancillary data.
+/// A single byte of payload ("f") is sent alongside the fd.
+fn send_fd_over_socket(sock: &UnixStream, fd: RawFd) -> io::Result<()> {
+    use std::os::unix::io::AsRawFd;
+    use std::mem;
+
+    let sockfd = sock.as_raw_fd();
+    let mut payload: u8 = b'f';
+
+    // iovec: one byte of payload
+    let mut iov = libc::iovec {
+        iov_base: &mut payload as *mut u8 as *mut libc::c_void,
+        iov_len: 1,
+    };
+
+    // cmsg buffer: CMSG_SPACE(sizeof(int)) bytes
+    let cmsg_space = unsafe { libc::CMSG_SPACE(mem::size_of::<RawFd>() as u32) } as usize;
+    let mut cmsg_buf: Vec<u8> = vec![0u8; cmsg_space];
+
+    let mut msghdr: libc::msghdr = unsafe { mem::zeroed() };
+    msghdr.msg_iov     = &mut iov as *mut libc::iovec;
+    msghdr.msg_iovlen  = 1;
+    msghdr.msg_control    = cmsg_buf.as_mut_ptr() as *mut libc::c_void;
+    msghdr.msg_controllen = cmsg_space;
+
+    // Fill in the cmsg header
+    let cmsg: *mut libc::cmsghdr = unsafe { libc::CMSG_FIRSTHDR(&msghdr) };
+    unsafe {
+        (*cmsg).cmsg_level = libc::SOL_SOCKET;
+        (*cmsg).cmsg_type  = libc::SCM_RIGHTS;
+        (*cmsg).cmsg_len   = libc::CMSG_LEN(mem::size_of::<RawFd>() as u32) as usize;
+        let data_ptr = libc::CMSG_DATA(cmsg) as *mut RawFd;
+        *data_ptr = fd;
+    }
+
+    let ret = unsafe { libc::sendmsg(sockfd, &msghdr, 0) };
+    if ret < 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+/// Connect to vmm_service via the given socket path, retrying every 100 ms up to
+/// CONNECT_RETRY_LIMIT times. vmm_service may start after qcrosvm on cold boot,
+/// so retries are expected; the limit prevents an indefinite hang if the socket
+/// path is wrong or vmm_service never starts.
+const CONNECT_RETRY_LIMIT: u32 = 100; // 100 * 100 ms = 10 s total
+fn connect_vmm_service(sock_path: &str) -> Option<UnixStream> {
+    for attempt in 0..CONNECT_RETRY_LIMIT {
+        match UnixStream::connect(sock_path) {
+            Ok(s) => {
+                info!("connected to {} after {} attempt(s)", sock_path, attempt + 1);
+                return Some(s);
+            }
+            Err(e) => {
+                if attempt == 0 {
+                    info!("connect to {} failed: {}, retrying.", sock_path, e);
+                }
+                sleep(Duration::from_millis(100));
+            }
+        }
+    }
+    error!("connect to {} failed after {} attempts", sock_path, CONNECT_RETRY_LIMIT);
+    None
+}
+
+/// Connect to vmm_service via the given socket path, send vm_fd once via SCM_RIGHTS,
+/// and return the socket wrapped in Arc for exclusive use by vcpu0.
+/// vmm_service uses vm_fd to issue IOCTL syscall, for example, GH_VM_GRP_WAKEUP on PM resume events.
+/// Returns None if connection or fd-send fails (non-fatal; vmm-sock disabled).
+fn register_vm_with_vmm_service(vm_fd: RawFd, sock_path: &str) -> Option<Arc<UnixStream>> {
+    let sock = connect_vmm_service(sock_path)?;
+    if let Err(e) = send_fd_over_socket(&sock, vm_fd) {
+        error!("failed to send vm_fd={} to vmm_service: {}", vm_fd, e);
+        return None;
+    }
+    info!("sent vm_fd={} to vmm_service", vm_fd);
+    Some(Arc::new(sock))
+}
+
 struct Vcpu {
     id: u8,
     raw_fd: i32,
@@ -2358,20 +2441,29 @@ struct Vcpu {
 }
 
 impl Vcpu {
-    fn run_vcpu(&mut self, vm_name: &str) -> Result<JoinHandle<()>, BackendError>{
+    fn run_vcpu(&mut self, vm_name: &str, vmm_sock: Option<Arc<UnixStream>>) -> Result<JoinHandle<()>, BackendError>{
         let builder = thread::Builder::new()
         .name(format!("{}_vcpu{}", vm_name, self.id));
         let vm = vm_name.to_string();
         let id = self.id;
         let raw_fd = self.raw_fd;
         builder.spawn(move || {
+            // Start the VM. GH_VCPU_RUN blocks until VM_EXIT.
             loop {
                 let ret = unsafe { libc::ioctl(raw_fd, GH_VCPU_RUN()) };
+
+                // Notify vmm_service with "vm_exit\n" on VM_EXIT.
+                // vmm_sock is Some only for vcpu0 (set by run_vcpus).
+                if let Some(ref sock) = vmm_sock {
+                    if let Err(e) = sock.as_ref().write_all(b"vm_exit\n") {
+                        error!("vcpu{}: failed to send vm_exit to vmm_service: {}", id, e);
+                    }
+                }
+
                 if ret == 0 {
                     error!("{}", format!("{}_vcpu{} returned 0", vm, id));
                     std::process::exit(0);
-                }
-                else {
+                } else {
                     error!("{}", format!("{}_vcpu{} exited with reason {}", vm, id, ret));
                     panic!("{}", format!("{}_vcpu{} exited with reason {}", vm, id, ret));
                 }
@@ -2406,10 +2498,13 @@ impl Vcpus {
         Ok(())
     }
     fn run_vcpus(&mut self, cfg: &mut BackendConfig) ->  Result<Vec<JoinHandle<()>>, BackendError> {
+        let vmm_sock = cfg.vmm_sock.as_ref().cloned();
         let mut handles = vec![];
         for vcpu in &mut self.vcpus {
             let vm_name = cfg.vm.as_ref().expect(&format!("{}:{}", file!(), line!()));
-            let handle = vcpu.run_vcpu(vm_name);
+            // Only pass vmm_sock to vcpu0; other vCPUs receive None.
+            let sock = if vcpu.id == 0 { vmm_sock.clone() } else { None };
+            let handle = vcpu.run_vcpu(vm_name, sock);
             if let Err(_handle) = handle {
                 return Err(_handle);
             }
@@ -2807,6 +2902,8 @@ struct BackendConfig {
     log_level: LevelFilter,
     log_type: Option<String>,
     bkend_dev_exist: bool,
+    vmm_sock: Option<Arc<UnixStream>>,
+    vmm_sock_path: Option<PathBuf>,
 }
 
 impl Default for BackendConfig {
@@ -2822,6 +2919,8 @@ impl Default for BackendConfig {
             log_level: log::LevelFilter::Info,
             log_type: Some("ftrace".to_string()),
             bkend_dev_exist: false,
+            vmm_sock: None,
+            vmm_sock_path: None,
         }
     }
 }
@@ -3018,6 +3117,10 @@ impl VMBackend {
                 self.cfg.bkend_dev_exist = true;
                 self.vugeneric_devices.set_argument(value)?
             }
+            "vmm-sock" => {
+                let path = PathBuf::from(value.expect(&format!("{}:{}", file!(), line!())));
+                self.cfg.vmm_sock_path = Some(path);
+            }
             _ => unreachable!(),
         }
 
@@ -3092,6 +3195,26 @@ impl VMBackend {
         }
 
         self.cfg.vm_sfd = Some(unsafe { SafeDescriptor::from_raw_descriptor(vm_fd) });
+
+        // Connect to vmm_service only if --vmm-sock is given and the socket exists.
+        if let Some(ref sock_path) = self.cfg.vmm_sock_path {
+            if sock_path.exists() {
+                let raw_vm_fd = self.cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!())).as_raw_descriptor();
+                self.cfg.vmm_sock = register_vm_with_vmm_service(
+                    raw_vm_fd,
+                    sock_path.to_str().expect(&format!("{}:{}", file!(), line!())),
+                );
+                if self.cfg.vmm_sock.is_none() {
+                    error!("vmm-sock: failed to register vm_fd with vmm_service at {}, \
+                            continuing without vmm-sock support", sock_path.display());
+                }
+            } else {
+                error!("vmm-sock: socket {} not found, continuing without vmm-sock support",
+                       sock_path.display());
+                // Non-fatal: proceed without vmm-sock for backward compatibility.
+                // vmm_sock remains None; vcpu threads will skip the vm_exit notification.
+            }
+        }
         let vm_sfd = self.cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!()));
 
         let vm_name = self.cfg.vm.as_ref().expect(&format!("{}:{}", file!(), line!()));
@@ -3104,7 +3227,7 @@ impl VMBackend {
         }
 
         // CPU Count
-        let vcpu_count = unsafe { libc::ioctl(vm_fd, GH_GET_VCPU_COUNT()) };
+        let vcpu_count = unsafe { libc::ioctl(vm_sfd.as_raw_descriptor(), GH_GET_VCPU_COUNT()) };
         if vcpu_count < 0 || vcpu_count > (GH_VCPU_MAX).try_into().expect(&format!("{}:{}", file!(), line!())) {
             error!("{}", format!("Error: get vcpu count ioctl failed {:?}", io::Error::last_os_error()));
             panic!("{}", format!("Error: get vcpu count ioctl failed {:?}", io::Error::last_os_error()));
@@ -3113,7 +3236,7 @@ impl VMBackend {
         info!("{}", format!("vcpu_count {}", self.vcpus.vcpu_count));
 
         if self.cfg.non_protected_virtio {
-            let vm_mem_count = unsafe { libc::ioctl(vm_fd, GH_VM_GET_MEM_COUNT()) };
+            let vm_mem_count = unsafe { libc::ioctl(vm_sfd.as_raw_descriptor(), GH_VM_GET_MEM_COUNT()) };
             if vm_mem_count <= 0 {
                 error!("{}", format!("Error: get vm mem count ioctl failed {:?}", io::Error::last_os_error()));
                 panic!("{}", format!("Error: get vm mem count ioctl failed {:?}", io::Error::last_os_error()));
@@ -3153,7 +3276,7 @@ impl VMBackend {
                 }
                 info!("{}", format!("shmem_size {}", shmem_size));
 
-                self.cfg.mem = Some(self::new_from_rawfd(&[(GuestAddress(0), shmem_size)], &vm_fd)
+                self.cfg.mem = Some(self::new_from_rawfd(&[(GuestAddress(0), shmem_size)], &vm_sfd.as_raw_descriptor())
                                 .expect(&format!("{}:{}", file!(), line!())));
             }
         }
@@ -3916,6 +4039,9 @@ fn parse_and_run(args: std::env::Args) -> Result<(), ()> {
         Argument::value("vhost-user-gp", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         Argument::value("vsock", "label=LABEL[,key=value", "label=LABEL,cid=context-id"),
         Argument::value("vhost-user-eavb", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
+        Argument::value("vmm-sock", "SOCKET_PATH",
+            "Unix socket path from vmm_service. \
+             Must be unique per VM in multi-GVM scenarios (e.g. /tmp/vm<$VMID>.sock)"),
         Argument::value("vhost-user-compressched", "SOCKET_PATH", "label=LABEL[,key=value[,...]]"),
         ];
 
