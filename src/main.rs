@@ -1019,19 +1019,17 @@ impl DeviceTrait for VirtioHabDevices {
         };
 
         loop {
-            if !vhab.vhost_user_hab.socket.exists() {
-                retries += 1;
-                if retries >= max_retries {
-                    return Err(argument::Error::InvalidValue {
-                        value: param.to_owned(),
-                        expected: String::from("vhost-user-hab socket path must be an existing path"),
-                    });
-                }
-                sleep(Duration::from_millis(RETRY_DELAY_MS));
-            } else {
-                info!("{} appears after retries {}", vhab.vhost_user_hab.socket.display(), retries);
+            if vhab.vhost_user_hab.socket.exists() {
                 break;
             }
+            retries += 1;
+            if retries >= max_retries {
+                return Err(argument::Error::InvalidValue {
+                    value: param.to_owned(),
+                    expected: String::from("vhost-user-hab socket path must be an existing path"),
+                });
+            }
+            sleep(Duration::from_millis(RETRY_DELAY_MS));
         }
 
         for opt in components {
@@ -1623,11 +1621,20 @@ impl DeviceTrait for VuVirtioI2cDevices {
                 ),
         };
 
-        if !vi2c.vhost_user_i2c.socket.exists() {
-            return Err(argument::Error::InvalidValue {
-                value: param.to_owned(),
-                expected: String::from("vhost-user-i2c socket path must an existing path"),
-            });
+        let mut retries = 0;
+        let max_retries = RETRY_LIMIT;
+        loop {
+            if vi2c.vhost_user_i2c.socket.exists() {
+                break;
+            }
+            retries += 1;
+            if retries >= max_retries {
+                return Err(argument::Error::InvalidValue {
+                    value: param.to_owned(),
+                    expected: String::from("vhost-user-i2c socket path must an existing path"),
+                });
+            }
+            sleep(Duration::from_millis(RETRY_DELAY_MS));
         }
 
         for opt in components {
@@ -1737,11 +1744,20 @@ impl DeviceTrait for VuVirtioGpioDevices {
         };
         vgpio.vhost_user_gpio = vu;
 
-        if !vgpio.vhost_user_gpio.socket.exists() {
-            return Err(argument::Error::InvalidValue {
-                value: param.to_owned(),
-                expected: String::from("vhost-user-gpio socket path must an existing path"),
-            });
+        let mut retries = 0;
+        let max_retries = RETRY_LIMIT;
+        loop {
+            if vgpio.vhost_user_gpio.socket.exists() {
+                break;
+            }
+            retries += 1;
+            if retries >= max_retries {
+                return Err(argument::Error::InvalidValue {
+                    value: param.to_owned(),
+                    expected: String::from("vhost-user-gpio socket path must an existing path"),
+                });
+            }
+            sleep(Duration::from_millis(RETRY_DELAY_MS));
         }
 
         for opt in components {
@@ -1979,11 +1995,20 @@ impl DeviceTrait for VuVirtioSsrDevices {
         };
         vssr.vhost_user_ssr = vu;
 
-        if !vssr.vhost_user_ssr.socket.exists() {
-            return Err(argument::Error::InvalidValue {
-                value: param.to_owned(),
-                expected: String::from("vhost-user-ssr socket path must an existing path"),
-            });
+        let mut retries = 0;
+        let max_retries = RETRY_LIMIT;
+        loop {
+            if vssr.vhost_user_ssr.socket.exists() {
+                break;
+            }
+            retries += 1;
+            if retries >= max_retries {
+                return Err(argument::Error::InvalidValue {
+                    value: param.to_owned(),
+                    expected: String::from("vhost-user-ssr socket path must an existing path"),
+                });
+            }
+            sleep(Duration::from_millis(RETRY_DELAY_MS));
         }
         for opt in components {
             let mut o = opt.splitn(2,'=');
