@@ -30,7 +30,8 @@ ARGS="--vm=autoghgvmlv \
 --vhost-user-generic "/tmp/linux-vm3-enc-skt",label=134 \
 --vhost-user-generic "/tmp/linux-vm3-rtc-skt",label=135 \
 --vhost-user-generic "/tmp/linux-vm3-input-skt",label=120 \
---vhost-user-generic "/tmp/linux-vm3-usb-skt",label=136
+--vhost-user-generic "/tmp/linux-vm3-usb-skt",label=136 \
+--vhost-user-generic "/tmp/linux-vm3-snd-skt",label=118,queue-num=4
 "
 
 wait_for_service() {
