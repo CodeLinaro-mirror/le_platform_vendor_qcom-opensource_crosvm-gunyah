@@ -34,16 +34,16 @@ ARGS="--vm=autoghgvmlv \
 "
 
 wait_for_service() {
-    local svc="$1"
-    local wait_time="$2"
-    local interval="$3"
+    svc="$1"
+    service_wait_time="$2"
+    service_interval="$3"
 
-    local elapsed=0
-    local state=""
+    elapsed=0
+    state=""
 
-    echo "Waiting for $svc (timeout=${wait_time}s, interval=${interval}s)"
+    echo "Waiting for $svc (timeout=${service_wait_time}s, interval=${service_interval}s)"
 
-    while awk "BEGIN {exit !($elapsed < $wait_time)}"; do
+    while awk "BEGIN {exit !($elapsed < $service_wait_time)}"; do
         state=$(systemctl is-active "$svc" 2>/dev/null)
         echo " -> $svc state=$state elapsed=${elapsed}s"
 
@@ -51,14 +51,13 @@ wait_for_service() {
             return 1
         fi
 
-        sleep "$interval"
-        elapsed=$(awk "BEGIN {print $elapsed + $interval}")
+        sleep "$service_interval"
+        elapsed=$(awk "BEGIN {print $elapsed + $service_interval}")
     done
 
     echo " -> timeout (last state: $state)"
 
     if [ "$state" = "active" ]; then
-        #echo " -> $svc is active"
         return 0
     fi
 
@@ -66,8 +65,8 @@ wait_for_service() {
 }
 
 add_service_if_ready() {
-    local wait_time=0
-    local interval=1
+    wait_time=0
+    interval=1
 
     # parse args
     while [ $# -gt 0 ]; do
@@ -86,13 +85,13 @@ add_service_if_ready() {
         esac
     done
 
-    local svc="$1"
-    local arg="$2"
+    service="$1"
+    arg="$2"
 
-    if wait_for_service "$svc" "$wait_time" "$interval"; then
+    if wait_for_service "$service" "$wait_time" "$interval"; then
         ARGS="$ARGS $arg"
     else
-        echo "Skipping $svc"
+        echo "Skipping $service"
     fi
 }
 
