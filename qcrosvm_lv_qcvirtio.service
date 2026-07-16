@@ -24,7 +24,8 @@ Requires=qcvirtio-blk-agl.service \
 
 Wants=qcvirtio-camera-agl.service
 
-After=qcvirtio-blk-agl.service \
+After=qcrosvm.service \
+	qcvirtio-blk-agl.service \
 	qcvirtio-gpu-opengl-agl.service \
 	qcvirtio-net-agl.service \
 	qcvirtio-console-agl.service \
