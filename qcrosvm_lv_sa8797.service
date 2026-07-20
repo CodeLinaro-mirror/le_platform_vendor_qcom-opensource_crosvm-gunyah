@@ -75,4 +75,4 @@ ExecStart=/usr/bin/qcrosvm \
     --vhost-user-hab "/tmp/linux-vm3-eva-skt",label=128,device-id=101,queue-num=2
 
 [Install]
-WantedBy = multi-user.target
+WantedBy = multi-gvm.target

@@ -85,6 +85,3 @@ OOMScoreAdjust=-1000
 [Install]
 WantedBy = single-gvm.target
 WantedBy = multi-gvm.target
-WantedBy = safe-ivi.target
-WantedBy = nonsafe-ivi.target
-WantedBy = flex.target
