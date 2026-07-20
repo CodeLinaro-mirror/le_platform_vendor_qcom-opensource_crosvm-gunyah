@@ -11,8 +11,8 @@ After=dev-input-vmm\x2dautoghgvm\x2dpwr\x2dkey.device
 Wants=gvm_net_config.service
 
 # qcvirtio devices
-Requires=coqos-virtio-blk.service coqos-virtio-gpu-virgl.service coqos-virtio-snd.service coqos-virtio-net.service
-After=coqos-virtio-blk.service coqos-virtio-gpu-virgl.service coqos-virtio-snd.service coqos-virtio-net.service
+Requires=qcvirtio-blk.service qcvirtio-gpu-opengl.service qcvirtio-snd.service qcvirtio-net.service
+After=qcvirtio-blk.service qcvirtio-gpu-opengl.service qcvirtio-snd.service qcvirtio-net.service
 
 [Service]
 Type=simple

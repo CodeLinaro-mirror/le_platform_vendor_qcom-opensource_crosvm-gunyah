@@ -3,50 +3,46 @@
 
 [Unit]
 Description=Service to start the AGL GVM
-# List of service unit dependencies
-Requires=vmm-pwr-key.service
-After=qcrosvm.service vmm-pwr-key.service
-# List of device unit dependencies
-Requires=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
-After=dev-input-vmm\x2dautoghgvmlv\x2dpwr\x2dkey.device
 
-Requires=coqos-virtio-blk-agl.service \
-	coqos-virtio-gpu-virgl-agl.service \
-	coqos-virtio-net-agl.service \
-	coqos-virtio-console-agl.service \
-	coqos-virtio-rng-agl.service \
-	coqos-virtio-vsock-agl.service
-After=coqos-virtio-blk-agl.service \
-	coqos-virtio-gpu-virgl-agl.service \
-	coqos-virtio-net-agl.service \
-	coqos-virtio-console-agl.service \
-	coqos-virtio-rng-agl.service \
-	coqos-virtio-vsock-agl.service
+Requires=qcvirtio-blk-agl.service \
+	qcvirtio-gpu-opengl-agl.service \
+	qcvirtio-net-agl.service \
+	qcvirtio-console-agl.service \
+	qcvirtio-rng-agl.service \
+	qcvirtio-vsock-agl.service \
+	qcvirtio-gpio-agl.service \
+	qcvirtio-scmi-agl.service \
+	qcvirtio-spi-agl.service \
+	qcvirtio-can-agl.service \
+	qcvirtio-i2c-agl.service \
+	qcvirtio-video-decoder-agl.service \
+	qcvirtio-video-encoder-agl.service \
+	qcvirtio-rtc-agl.service \
+	qcvirtio-input-agl.service
+
+Wants=qcvirtio-camera-agl.service
+
+After=qcvirtio-blk-agl.service \
+	qcvirtio-gpu-opengl-agl.service \
+	qcvirtio-net-agl.service \
+	qcvirtio-console-agl.service \
+	qcvirtio-rng-agl.service \
+	qcvirtio-vsock-agl.service \
+	qcvirtio-gpio-agl.service \
+	qcvirtio-scmi-agl.service \
+	qcvirtio-spi-agl.service \
+	qcvirtio-can-agl.service \
+	qcvirtio-camera-agl.service \
+	qcvirtio-i2c-agl.service \
+	qcvirtio-video-decoder-agl.service \
+	qcvirtio-video-encoder-agl.service \
+	qcvirtio-input-agl.service \
+	qcvirtio-rtc-agl.service
 
 [Service]
 Type=simple
 Slice=gvm.slice
-ExecStart=/usr/bin/qcrosvm \
---vm=autoghgvmlv \
---use-non-protected-virtio \
---disk=/dev/disk/by-partlabel/lv_misc,label=10E,rw=true \
---disk=/dev/disk/by-partlabel/lv_dtbo_a,label=124,rw=true \
---disk=/dev/disk/by-partlabel/lv_dtbo_b,label=125,rw=true \
---disk=/dev/disk/by-partlabel/lv_devinfo,label=101,rw=true \
---disk=/dev/disk/by-partlabel/lv_boot_a,label=106,rw=true \
---disk=/dev/disk/by-partlabel/lv_boot_b,label=107,rw=true \
---disk=/dev/disk/by-partlabel/lv_vbmeta_a,label=10C,rw=true \
---disk=/dev/disk/by-partlabel/lv_vbmeta_b,label=10D,rw=true \
---disk=/dev/disk/by-partlabel/lv_system_a,label=112,rw=true \
---disk=/dev/disk/by-partlabel/lv_system_b,label=113,rw=true \
---input=/dev/input/usb1_touchscreen1,label=11F \
---input=/dev/input/vmm-autoghgvmlv-pwr-key,label=120 \
---vhost-user-generic "/tmp/linux-vm3-blk-skt",label=111 \
---vhost-user-generic "/tmp/linux-vm3-gpu-skt",label=114,queue-num=2 \
---vhost-user-generic "/tmp/linux-vm3-net-skt",label=126 \
---vhost-user-generic "/tmp/linux-vm3-con-skt",label=127 \
---vhost-user-generic "/tmp/linux-vm3-rng-skt",label=129 \
---vhost-user-generic "/tmp/linux-vm3-vsk-skt",label=130
+ExecStart=/usr/bin/qcrosvm_lv_qcvirtio.sh
 
 [Install]
 WantedBy = multi-user.target
