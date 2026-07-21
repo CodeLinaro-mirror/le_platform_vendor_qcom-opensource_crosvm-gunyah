@@ -12,7 +12,8 @@ Requires=vmm-pwr-key.service \
     vhost-user-gpu-vm3.service \
     vhost-user-misc-vm3.service \
     vhost-user-vid-vm3.service \
-    vhost-user-vnw-vm3.service
+    vhost-user-vnw-vm3.service \
+    vhost-device-ssr_lv.service
 After=qcrosvm.service \
     vhost-user-scmi-lv.service \
     vmm-pwr-key.service \
@@ -24,7 +25,8 @@ After=qcrosvm.service \
     vhost-user-gpu-vm3.service \
     vhost-user-misc-vm3.service \
     vhost-user-vid-vm3.service \
-    vhost-user-vnw-vm3.service
+    vhost-user-vnw-vm3.service \
+    vhost-device-ssr_lv.service
 
 # List of device unit dependencies
 Wants=gvm-net-config-lvgvm.service
@@ -72,7 +74,8 @@ ExecStart=/usr/bin/qcrosvm \
     --vhost-user-hab "/tmp/linux-vm3-ext-skt",label=11E,device-id=97,queue-num=6 \
     --vhost-user-hab "/tmp/linux-vm3-soccp-skt",label=126,device-id=99,queue-num=2 \
     --vhost-user-hab "/tmp/linux-vm3-dprx-skt",label=127,device-id=100,queue-num=4 \
-    --vhost-user-hab "/tmp/linux-vm3-eva-skt",label=128,device-id=101,queue-num=2
+    --vhost-user-hab "/tmp/linux-vm3-eva-skt",label=128,device-id=101,queue-num=2 \
+    --vhost-user-ssr "/tmp/linux-vm3-ssr-skt0",label=129
 
 [Install]
 WantedBy = multi-gvm.target
