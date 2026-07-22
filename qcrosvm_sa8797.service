@@ -1,4 +1,4 @@
-# Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause-Clear
 [Unit]
 Description=Service to start the Android GVM
@@ -15,8 +15,17 @@ Before = shutdown.target systemd-udev-trigger.service
 DefaultDependencies = no
 
 [Service]
+Environment=VMID=52
+Environment=KEY=shutdown
+# TimeoutShutdownSec: seconds vmm_powerctl waits for qcrosvm to exit.
+# TimeoutStopSec must be set to TimeoutShutdownSec + 30s so that systemd
+# does not kill the process before vmm_powerctl has finished waiting.
+Environment=TimeoutShutdownSec=60
+TimeoutStopSec=90s
 Type=simple
 Slice=gvm.slice
+ExecStop=/usr/bin/vm_powerctl -v ${VMID} -k ${KEY} \
+            -t ${TimeoutShutdownSec} -p ${MAINPID}
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvm \
 --use-non-protected-virtio \
