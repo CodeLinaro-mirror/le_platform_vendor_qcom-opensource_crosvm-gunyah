@@ -30,7 +30,7 @@ extern crate android_logger;
 use libc::{self, c_uint, c_int, c_char, open, O_RDWR, O_WRONLY};
 
 use devices::virtio::input::{constants::*, new_evdev};
-use devices::virtio::{self, base_features, Block, Console, Net};
+use devices::virtio::{self, base_features, BlockAsync, Console, Net};
 use devices::serial_device::{SerialHardware, SerialParameters, SerialType};
 use hypervisor::{ProtectionType};
 use mmio::MmioDevice;
@@ -216,6 +216,7 @@ struct VirtioDisk {
     label: u32,
     mmio: Option<MmioDevice>,
     config_space: Option<Vec<u32>>,
+    queue_num: u16,
 }
 
 impl VirtioDisk {
@@ -232,10 +233,11 @@ impl VirtioDisk {
             label: 0,
             mmio: None,
             config_space: Some(Vec::new()),
+            queue_num: 1,
         }
     }
 
-    fn create_bdev(&mut self, q_size: Option<u16>) -> Result<Box<Block>, BackendError> {
+    fn create_bdev(&mut self) -> Result<Box<BlockAsync>, BackendError> {
         // Special case '/proc/self/fd/*' paths. The FD is already open, just use it.
         let raw_image: File = if self.disk.path.parent() == Some(Path::new("/proc/self/fd")) {
             // Safe because we will validate |raw_fd|.
@@ -264,12 +266,12 @@ impl VirtioDisk {
             val: io::Error::last_os_error(),
         })?;
 
-        let disk_file = disk::create_disk_file(raw_image, disk::MAX_NESTING_DEPTH, Path::new(&self.disk.path)).map_err(|_| BackendError::StrNumError {
-            err: String::from("create_disk_file failed"),
+        let disk_file = disk::create_async_disk_file(raw_image).map_err(|_| BackendError::StrNumError {
+            err: String::from("create_async_disk_file failed"),
             val: io::Error::last_os_error(),
         })?;
 
-        let dev = virtio::Block::new(
+        let dev = virtio::BlockAsync::new(
             base_features(ProtectionType::Unprotected) ,
             disk_file ,
             self.disk.read_only,
@@ -277,7 +279,7 @@ impl VirtioDisk {
             self.disk.block_size,
             None,
             None,
-            q_size,
+            Some(self.queue_num),
             ).map_err(|_| BackendError::StrError(String::from("virtio_block_new failed")))?;
 
         Ok(Box::new(dev))
@@ -299,14 +301,13 @@ impl VirtioDiskDevices {
 
             let mem = cfg.mem.as_ref().expect(&format!("{}:{}", file!(), line!()));
             let sfd :&SafeDescriptor;
-            let q_size :Option<u16>;
 
             match cfg.driver_variant {
-                1 => {sfd = cfg.sfd.as_ref().expect(&format!("{}:{}", file!(), line!())); q_size = Some(256)}
-                2 => {sfd = cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!())); q_size = Some(128)}
+                1 => {sfd = cfg.sfd.as_ref().expect(&format!("{}:{}", file!(), line!()))}
+                2 => {sfd = cfg.vm_sfd.as_ref().expect(&format!("{}:{}", file!(), line!()))}
                 _ => return Err(BackendError::StrError(String::from("Unsupported driver variant.")))
             };
-            let bdev = vdisk.create_bdev(q_size)?;
+            let bdev = vdisk.create_bdev()?;
 
             vdisk.mmio = Some(MmioDevice::new(mem.clone(), bdev).expect(&format!("{}:{}", file!(), line!())));
             mmio_handle(&vdisk.mmio, vdisk.label, sfd, cfg)?;
@@ -415,6 +416,13 @@ impl DeviceTrait for VirtioDiskDevices {
                   })?;
                   vdisk.disk.o_direct = direct_io;
               }
+                "queue-num" => {
+                    let qn: u16 = value.parse().map_err(|_| argument::Error::InvalidValue {
+                        value: value.to_owned(),
+                        expected: String::from("`queue-num` must be an integer"),
+                    })?;
+                    vdisk.queue_num = qn;
+                }
                 _ => {
                     return Err(argument::Error::InvalidValue {
                         value: kind.to_owned(),
