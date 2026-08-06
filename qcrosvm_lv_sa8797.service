@@ -83,5 +83,9 @@ ExecStart=/usr/bin/qcrosvm \
     --vhost-user-hab "/tmp/linux-vm3-eva-skt",label=128,device-id=101,queue-num=2 \
     --vhost-user-ssr "/tmp/linux-vm3-ssr-skt0",label=129
 
+# Back up the previous console log before the next start truncates it
+# Args shown explicitly at their defaults: -n copies, -d backup dir, -s max size.
+ExecStopPost=-/usr/bin/gvm-log-backup.sh /tmp/la_gvm.txt -n 10 -d /data/logs/la_gvm -s 10M
+
 [Install]
 WantedBy = multi-gvm.target

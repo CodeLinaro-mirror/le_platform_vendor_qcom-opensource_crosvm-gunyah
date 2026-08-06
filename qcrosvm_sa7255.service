@@ -1,4 +1,4 @@
-# Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause-Clear
 [Unit]
 Description=Service to start the Android GVM
@@ -60,6 +60,10 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-frpc "/tmp/sock_file_frpc",label=45 \
 --console=/tmp/la_gvm.txt,label=41 \
 --input=/dev/input/usb1_touchscreen0,label=3F
+
+# Back up the previous console log before the next start truncates it
+# Args shown explicitly at their defaults: -n copies, -d backup dir, -s max size.
+ExecStopPost=-/usr/bin/gvm-log-backup.sh /tmp/la_gvm.txt -n 10 -d /data/logs/la_gvm -s 10M
 
 [Install]
 WantedBy = multi-user.target
