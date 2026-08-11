@@ -11,7 +11,7 @@ After=dev-input-vmm\x2dautoghgvm\x2dpwr\x2dkey.device
 Wants=gvm_net_config.service
 
 Conflicts = shutdown.target
-Before = shutdown.target systemd-udev-trigger.service
+Before = shutdown.target
 DefaultDependencies = no
 
 [Service]
