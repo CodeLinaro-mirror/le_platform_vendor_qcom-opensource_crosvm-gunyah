@@ -2,13 +2,14 @@
 # SPDX-License-Identifier: BSD-3-Clause-Clear
 [Unit]
 Description=Service to start the Linux GVM with Qclinux
-Requires=vhost-user-scmi-qclinux-lv.service vhost-device-ssr_lv.service
-After=vhost-user-scmi-qclinux-lv.service vhost-device-ssr_lv.service
+Requires=vhost-user-scmi-qclinux-lv.service vhost-device-ssr_lv.service vmm_drv.service
+After=vhost-user-scmi-qclinux-lv.service vhost-device-ssr_lv.service vmm_drv.service
 # List of service unit dependencies
 # List of device unit dependencies
 [Service]
 Type=simple
 Slice=gvm.slice
+Environment=VMID=53
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvmlv \
 --use-non-protected-virtio \
@@ -30,6 +31,8 @@ ExecStart=/usr/bin/qcrosvm \
 --disk=/dev/disk/by-partlabel/lv_userdata,label=111,rw=true \
 --disk=/dev/disk/by-partlabel/lv_system_a,label=112,rw=true \
 --disk=/dev/disk/by-partlabel/lv_system_b,label=113,rw=true \
+--input=/dev/input/vmm-autoghgvmlv-pwr-key,label=120 \
+--vmm-sock=/tmp/vm${VMID}.sock \
 --net=true,label=114,ip_addr=10.10.10.18,netmask=255.255.255.0,mac=5A:6F:66:05:FF:25,tapName=lvgvm0 \
 --console=/tmp/lv_gvm.txt,label=121 \
 --vhost-user-scmi "/tmp/pt-lv-dev-skt",label=123 \
