@@ -62,6 +62,10 @@ const VENDOR_ID: u32 = 0;
 const MMIO_MAGIC_VALUE: u32 = 0x74726976;
 const MMIO_VERSION: u32 = 2;
 const VIRTIO_PCI_VENDOR_ID: u16 = 0x1af4;
+const VIRTIO_MMIO_SHM_LEN_LOW: u64 = 0x0b0;
+const VIRTIO_MMIO_SHM_LEN_HIGH: u64 = 0x0b4;
+const VIRTIO_MMIO_SHM_BASE_LOW: u64 = 0x0b8;
+const VIRTIO_MMIO_SHM_BASE_HIGH: u64 = 0x0bc;
 
 /// Implements the
 /// [MMIO](http://docs.oasis-open.org/virtio/virtio/v1.0/cs04/virtio-v1.0-cs04.html#x1-1090002)
@@ -212,6 +216,10 @@ impl MmioDevice {
                     0x44 => self.with_queue(0, |q| q.ready as u32),
                     0x60 => self.interrupt_status.load(Ordering::SeqCst) as u32,
                     0x70 => self.driver_status,
+                    VIRTIO_MMIO_SHM_LEN_LOW
+                    | VIRTIO_MMIO_SHM_LEN_HIGH
+                    | VIRTIO_MMIO_SHM_BASE_LOW
+                    | VIRTIO_MMIO_SHM_BASE_HIGH => u32::MAX,
                     0xfc => self.config_generation,
                     _ => {
                         warn!("{}", format!("unknown virtio mmio register read {:x}", offset));
