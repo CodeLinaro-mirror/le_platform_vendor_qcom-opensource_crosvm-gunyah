@@ -6,13 +6,13 @@
 <vm_config NUM_VMS="1">
   <!--Do not change the name of the element-->
   <vm>
-    <vm_name>autoghgvm</vm_name>
-    <vmid>52</vmid>
-    <systemd_service>qcrosvm.service</systemd_service>
-    <vmm_boot_lcm_enable>1</vmm_boot_lcm_enable>
+    <vm_name>autoghgvmlv</vm_name>
+    <vmid>53</vmid>
+    <systemd_service>qcrosvm_lv.service</systemd_service>
+    <vmm_boot_lcm_enable>0</vmm_boot_lcm_enable>
     <lcm_retry_count>7</lcm_retry_count>
-    <misc_partition>la_misc</misc_partition>
-    <slot_switch_config>2<!--SYMMETRIC_SLOT_SWITCH:1 ASYMMETRIC_SLOT_SWITCH:2--></slot_switch_config>
+    <misc_partition>lv_misc</misc_partition>
+    <slot_switch_config>1<!--SYMMETRIC_SLOT_SWITCH:1 ASYMMETRIC_SLOT_SWITCH:2--></slot_switch_config>
     <ramdump_type>fulldump<!--fulldump minidump disable--></ramdump_type>
   </vm>
 </vm_config>

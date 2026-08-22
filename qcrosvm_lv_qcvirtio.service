@@ -18,11 +18,13 @@ Requires=qcvirtio-blk-agl.service \
 	qcvirtio-video-decoder-agl.service \
 	qcvirtio-video-encoder-agl.service \
 	qcvirtio-rtc-agl.service \
-	qcvirtio-input-agl.service
+	qcvirtio-input-agl.service \
+	qcvirtio-usb-agl.service
 
 Wants=qcvirtio-camera-agl.service
 
-After=qcvirtio-blk-agl.service \
+After=qcrosvm.service \
+	qcvirtio-blk-agl.service \
 	qcvirtio-gpu-opengl-agl.service \
 	qcvirtio-net-agl.service \
 	qcvirtio-console-agl.service \
@@ -37,7 +39,8 @@ After=qcvirtio-blk-agl.service \
 	qcvirtio-video-decoder-agl.service \
 	qcvirtio-video-encoder-agl.service \
 	qcvirtio-input-agl.service \
-	qcvirtio-rtc-agl.service
+	qcvirtio-rtc-agl.service \
+	qcvirtio-usb-agl.service
 
 [Service]
 Type=simple

@@ -3,11 +3,11 @@
 [Unit]
 Description=Service to start the Android GVM
 # List of service unit dependencies
-Requires=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-gpce.service vhost-user-ext.service hyp-video-be.service qcx_be_server.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-glinkpassthrough.service vhost-user-frpc.service
-After=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-gpce.service vhost-user-ext.service audio-umd.service awe-audio.service hyp-video-be.service qcx_be_server.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-glinkpassthrough.service vhost-user-frpc.service disksymlink.service
+Requires=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-gpce.service vhost-user-ext.service hyp-video-be.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-glinkpassthrough.service vhost-user-frpc.service vhost-user-eavb.service disksymlink.service
+After=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-gpce.service vhost-user-ext.service audio-umd.service awe-audio.service hyp-video-be.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-glinkpassthrough.service vhost-user-frpc.service disksymlink.service vhost-user-eavb.service
 Wants=gvm_net_config.service
 Conflicts = shutdown.target
-Before = shutdown.target systemd-udev-trigger.service
+Before = shutdown.target
 DefaultDependencies = no
 
 [Service]
@@ -36,7 +36,7 @@ ExecStart=/usr/bin/qcrosvm \
 --disk=/dev/disk/by-partlabel/la_misc,label=32,rw=true \
 --disk=/dev/disk/by-partlabel/la_persist,label=33,rw=true \
 --disk=/dev/disk/by-partlabel/la_metadata,label=34,rw=true \
---disk=/dev/disk/by-partlabel/la_userdata,label=35,rw=true \
+--disk=/dev/disk/by-partlabel/la_userdata,label=35,rw=true,dio=true,block_size=4096 \
 --disk=/dev/disk/by-partlabel/la_super,label=36,rw=true \
 --disk=/dev/disk/by-partlabel/la_bootloader_a,label=4B,rw=true \
 --disk=/dev/disk/by-partlabel/la_bootloader_b,label=4C,rw=true \
@@ -55,7 +55,7 @@ ExecStart=/usr/bin/qcrosvm \
 --vsock cid=100,label=43 \
 --input=/dev/input/vmm-autoghgvm-pwr-key,label=40 \
 --vhost-user-ssr "/tmp/linux-vm2-ssr-skt0",label=47 \
---vhost-user-eavb "/tmp/linux-vm2-eavb-skt",label=4B \
+--vhost-user-eavb "/tmp/linux-vm2-eavb-skt",label=4D \
 --vhost-user-gp /tmp/gp_hello,label=44 \
 --vhost-user-frpc "/tmp/sock_file_frpc",label=45 \
 --console=/tmp/la_gvm.txt,label=41 \
