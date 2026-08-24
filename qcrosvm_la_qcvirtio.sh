@@ -20,7 +20,7 @@ ARGS="--vm=autoghgvm \
 --vhost-user-generic "/tmp/linux-vm2-gpu-skt",label=4E,queue-num=2 \
 --vhost-user-generic "/tmp/linux-vm2-snd-skt",label=4F \
 --vhost-user-generic "/tmp/linux-vm2-net-skt",label=52 \
---vhost-user-generic "/tmp/linux-vm2-con-skt",label=53 \
+--vhost-user-generic "/tmp/linux-vm2-con-skt",label=41 \
 --vhost-user-generic "/tmp/linux-vm2-vsk-skt",label=54 \
 --vhost-user-generic "/tmp/linux-vm2-input-skt",label=40 \
 --vhost-user-generic "/tmp/linux-vm2-gpio-skt",label=55 \
