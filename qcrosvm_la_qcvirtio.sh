@@ -29,6 +29,7 @@ ARGS="--vm=autoghgvm \
 --vhost-user-generic "/tmp/linux-vm2-can-skt",label=58 \
 --vhost-user-generic "/tmp/linux-vm2-i2c-skt",label=59 \
 --vhost-user-generic "/tmp/linux-vm2-rtc-skt",label=5A \
+--vhost-user-generic "/tmp/linux-vm2-rng-skt",label=53 \
 --vhost-user-generic "/tmp/linux-vm2-dec-skt",label=3B \
 --vhost-user-generic "/tmp/linux-vm2-enc-skt",label=3D \
 --vhost-user-generic "/tmp/linux-vm2-usb-skt",label=3C

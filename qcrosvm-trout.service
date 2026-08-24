@@ -17,6 +17,7 @@ Requires=qcvirtio-blk.service \
 	qcvirtio-video-decoder.service \
 	qcvirtio-video-encoder.service \
 	qcvirtio-rtc.service \
+	qcvirtio-rng.service \
 	qcvirtio-input.service \
 	qcvirtio-usb.service
 
@@ -37,6 +38,7 @@ After=qcvirtio-blk.service \
 	qcvirtio-video-decoder.service \
 	qcvirtio-video-encoder.service \
 	qcvirtio-rtc.service \
+	qcvirtio-rng.service \
 	qcvirtio-input.service \
 	qcvirtio-usb.service
 
