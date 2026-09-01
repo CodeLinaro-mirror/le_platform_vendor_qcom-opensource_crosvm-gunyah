@@ -13,7 +13,9 @@ Requires=vmm-pwr-key.service \
     vhost-user-misc-vm3.service \
     vhost-user-vid-vm3.service \
     vhost-user-vnw-vm3.service \
-    vhost-device-ssr_lv.service
+    vhost-device-ssr_lv.service \
+    vhost-user-glinkpassthrough-lv.service \
+    vhost-user-frpc_lv.service
 After=qcrosvm.service \
     vhost-user-scmi-lv.service \
     vmm-pwr-key.service \
@@ -26,7 +28,9 @@ After=qcrosvm.service \
     vhost-user-misc-vm3.service \
     vhost-user-vid-vm3.service \
     vhost-user-vnw-vm3.service \
-    vhost-device-ssr_lv.service
+    vhost-device-ssr_lv.service \
+    vhost-user-glinkpassthrough-lv.service \
+    vhost-user-frpc_lv.service
 
 # List of device unit dependencies
 Wants=gvm-net-config-lvgvm.service
@@ -63,6 +67,8 @@ ExecStart=/usr/bin/qcrosvm \
     --net=true,label=114,ip_addr=10.10.10.18,netmask=255.255.255.0,mac=5A:6F:66:05:FF:25,tapName=lvgvm0 \
     --console=/tmp/lv_gvm.txt,label=121 \
     --vhost-user-scmi "/tmp/pt-lv-dev-skt",label=123 \
+    --vhost-user-gp "/tmp/gp_lv",label=12A \
+    --vhost-user-frpc "/tmp/sock_file_frpc_lv",label=12B \
     --vhost-user-hab "/tmp/linux-vm3-ogles-skt",label=116,device-id=94,queue-num=2 \
     --vhost-user-hab "/tmp/linux-vm3-misc-skt",label=117,device-id=90,queue-num=2 \
     --vhost-user-hab "/tmp/linux-vm3-aud-skt",label=118,device-id=91,queue-num=8 \
