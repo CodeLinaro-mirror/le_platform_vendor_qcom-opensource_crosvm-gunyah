@@ -1,56 +1,49 @@
 # Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause-Clear
+
 [Unit]
 Description=Service to start the Android GVM
-# List of service unit dependencies
-Requires=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-ext.service vhost-user-gpce.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-eavb.service
-After=display-be.service gsl_hab_server.service vhost-user-misc.service vhost-user-disp.service vhost-user-gpu.service vhost-user-aud.service vhost-user-vid.service vhost-user-cam.service vhost-user-vnw.service vhost-user-ext.service vhost-user-gpce.service vmm-pwr-key.service vhost-user-glinkpassthrough.service vhost-user-frpc.service vhost-user-scmi.service vhost-device-ssr.service vhost-user-eavb.service
-# List of device unit dependencies
-Requires=dev-input-vmm\x2dautoghgvm\x2dpwr\x2dkey.device
-After=dev-input-vmm\x2dautoghgvm\x2dpwr\x2dkey.device
-Wants=gvm_net_config.service
+Requires=qcvirtio-blk.service \
+	qcvirtio-gpu-opengl.service \
+	qcvirtio-snd.service \
+	qcvirtio-net.service \
+	qcvirtio-console.service \
+	qcvirtio-vsock.service \
+	qcvirtio-gpio.service \
+	qcvirtio-scmi.service \
+	qcvirtio-spi.service \
+	qcvirtio-can.service \
+	qcvirtio-i2c.service \
+	qcvirtio-video-decoder.service \
+	qcvirtio-video-encoder.service \
+	qcvirtio-rtc.service \
+	qcvirtio-input.service \
+	qcvirtio-usb.service
 
-# qcvirtio devices
-Requires=qcvirtio-blk.service qcvirtio-gpu-opengl.service qcvirtio-snd.service qcvirtio-net.service
-After=qcvirtio-blk.service qcvirtio-gpu-opengl.service qcvirtio-snd.service qcvirtio-net.service
+Wants=qcvirtio-camera.service
+
+After=qcvirtio-blk.service \
+	qcvirtio-gpu-opengl.service \
+	qcvirtio-snd.service \
+	qcvirtio-net.service \
+	qcvirtio-console.service \
+	qcvirtio-vsock.service \
+	qcvirtio-camera.service \
+	qcvirtio-gpio.service \
+	qcvirtio-scmi.service \
+	qcvirtio-spi.service \
+	qcvirtio-can.service \
+	qcvirtio-i2c.service \
+	qcvirtio-video-decoder.service \
+	qcvirtio-video-encoder.service \
+	qcvirtio-rtc.service \
+	qcvirtio-input.service \
+	qcvirtio-usb.service
 
 [Service]
 Type=simple
 Slice=gvm.slice
-ExecStart=/usr/bin/qcrosvm \
---vm=autoghgvm \
---use-non-protected-virtio \
---disk=/dev/disk/by-partlabel/la_devinfo,label=21,rw=true \
---disk=/dev/disk/by-partlabel/la_v_boot_a,label=24,rw=true \
---disk=/dev/disk/by-partlabel/la_v_boot_b,label=25,rw=true \
---disk=/dev/disk/by-partlabel/la_dtbo_a,label=28,rw=true \
---disk=/dev/disk/by-partlabel/la_dtbo_b,label=29,rw=true \
---disk=/dev/disk/by-partlabel/la_boot_a,label=2A,rw=true \
---disk=/dev/disk/by-partlabel/la_boot_b,label=2B,rw=true \
---disk=/dev/disk/by-partlabel/la_vbmeta_a,label=30,rw=true \
---disk=/dev/disk/by-partlabel/la_vbmeta_b,label=31,rw=true \
---disk=/dev/disk/by-partlabel/la_misc,label=32,rw=true \
---disk=/dev/disk/by-partlabel/la_super,label=36,rw=true \
---vhost-user-hab "/tmp/linux-vm2-vnw-skt",label=48,device-id=96,queue-num=2 \
---vhost-user-hab "/tmp/linux-vm2-gpce-skt",label=49,device-id=98,queue-num=2 \
---vhost-user-hab "/tmp/linux-vm2-ext-skt",label=4A,device-id=97,queue-num=6 \
---vhost-user-hab "/tmp/linux-vm2-ogles-skt",label=39,device-id=94,queue-num=2 \
---vhost-user-hab "/tmp/linux-vm2-misc-skt",label=3A,device-id=90,queue-num=2 \
---vhost-user-hab "/tmp/linux-vm2-aud-skt",label=3B,device-id=91,queue-num=8 \
---vhost-user-hab "/tmp/linux-vm2-vid-skt",label=3D,device-id=95,queue-num=6 \
---vhost-user-hab "/tmp/linux-vm2-cam-skt",label=3E,device-id=92,queue-num=4 \
---vhost-user-scmi "/tmp/pt-dev-skt",label=42 \
---vhost-user-frpc "/tmp/sock_file_frpc",label=45 \
---vhost-user-ssr "/tmp/linux-vm2-ssr-skt0",label=47 \
---vhost-user-eavb "/tmp/linux-vm2-eavb-skt",label=4B \
---input=/dev/input/usb1_touchscreen0,label=3F \
---input=/dev/input/vmm-autoghgvm-pwr-key,label=40 \
---console=/tmp/la_gvm.txt,label=41 \
---vsock cid=100,label=43 \
---vhost-user-generic "/tmp/linux-vm2-blk-skt",label=35 \
---vhost-user-generic "/tmp/linux-vm2-gpu-skt",label=4E,queue-num=2 \
---vhost-user-generic "/tmp/linux-vm2-snd-skt",label=4F \
---vhost-user-generic "/tmp/linux-vm2-net-skt",label=52
+ExecStart=/usr/bin/qcrosvm_la_qcvirtio.sh
 
 [Install]
 WantedBy = multi-user.target
