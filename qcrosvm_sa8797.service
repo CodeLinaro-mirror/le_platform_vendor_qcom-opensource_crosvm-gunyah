@@ -24,8 +24,17 @@ Environment=TimeoutShutdownSec=60
 TimeoutStopSec=90s
 Type=simple
 Slice=gvm.slice
-ExecStop=/usr/bin/vm_powerctl -v ${VMID} -k ${KEY} \
-            -t ${TimeoutShutdownSec} -p ${MAINPID}
+# If MAINPID is empty, qcrosvm has already exited (e.g. it reboots
+# from shell before systemd could record its PID) — skip vm_powerctl
+# entirely instead of calling it with an invalid/empty -p argument.
+ExecStop=/bin/sh -c 'if [ -n "$MAINPID" ]; then \
+            exec /usr/bin/vm_powerctl -v ${VMID} -k ${KEY} \
+            -t ${TimeoutShutdownSec} -p ${MAINPID}; \
+        else \
+            echo "<5>qcrosvm.service: MAINPID empty, \
+            qcrosvm already exited, skipping vm_powerctl" \
+            > /dev/kmsg; \
+        fi'
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvm \
 --use-non-protected-virtio \
