@@ -18,10 +18,11 @@ DefaultDependencies = no
 Environment=VMID=52
 Environment=KEY=shutdown
 # TimeoutShutdownSec: seconds vmm_powerctl waits for qcrosvm to exit.
-# TimeoutStopSec must be set to TimeoutShutdownSec + 30s so that systemd
-# does not kill the process before vmm_powerctl has finished waiting.
+# TimeoutStopSec must be set to TimeoutShutdownSec + 60s so that systemd
+# does not kill the process before vmm_powerctl has finished waiting and
+# its 30s kill fallback has completed.
 Environment=TimeoutShutdownSec=60
-TimeoutStopSec=90s
+TimeoutStopSec=120s
 Type=simple
 Slice=gvm.slice
 # If MAINPID is empty, qcrosvm has already exited (e.g. it reboots
