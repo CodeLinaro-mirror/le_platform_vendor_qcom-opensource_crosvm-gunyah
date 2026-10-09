@@ -90,6 +90,10 @@ ExecStart=/usr/bin/qcrosvm \
 --vsock cid=100,label=43 \
 --log level=error
 
+# Back up the previous console log before the next start truncates it
+# Args shown explicitly at their defaults: -n copies, -d backup dir, -s max size.
+ExecStopPost=-/usr/bin/gvm-log-backup.sh /tmp/la_gvm.txt -n 10 -d /data/logs/la_gvm -s 10M
+
 # Prevent this critical service from being killed by the OOM killer
 OOMScoreAdjust=-1000
 

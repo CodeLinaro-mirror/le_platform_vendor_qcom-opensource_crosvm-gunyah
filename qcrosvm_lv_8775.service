@@ -55,5 +55,9 @@ ExecStart=/usr/bin/qcrosvm \
 --vhost-user-gp "/tmp/gp_lv",label=126 \
 --vhost-user-frpc "/tmp/sock_file_frpc_lv",label=127
 
+# Back up the previous console log before the next start truncates it
+# Args shown explicitly at their defaults: -n copies, -d backup dir, -s max size.
+ExecStopPost=-/usr/bin/gvm-log-backup.sh /tmp/lv_gvm.txt -n 10 -d /data/logs/lv_gvm -s 10M
+
 [Install]
 WantedBy = multi-user.target

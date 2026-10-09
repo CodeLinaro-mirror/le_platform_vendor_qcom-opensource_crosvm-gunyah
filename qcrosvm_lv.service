@@ -1,4 +1,4 @@
-# Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+# Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 # SPDX-License-Identifier: BSD-3-Clause-Clear
 [Unit]
 Description=Service to start the Linux GVM
@@ -52,6 +52,10 @@ ExecStart=/usr/bin/qcrosvm \
 --input=/dev/input/vmm-autoghgvmlv-pwr-key,label=120 \
 --console=/tmp/lv_gvm.txt,label=121 \
 --vhost-user-scmi "/tmp/pt-lv-dev-skt",label=123
+
+# Back up the previous console log before the next start truncates it
+# Args shown explicitly at their defaults: -n copies, -d backup dir, -s max size.
+ExecStopPost=-/usr/bin/gvm-log-backup.sh /tmp/lv_gvm.txt -n 10 -d /data/logs/lv_gvm -s 10M
 
 [Install]
 WantedBy = multi-user.target
