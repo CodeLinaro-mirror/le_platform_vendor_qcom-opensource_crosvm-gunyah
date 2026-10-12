@@ -17,8 +17,8 @@ ARGS="--vm=autoghgvmlv \
 --disk=/dev/disk/by-partlabel/lv_system_b,label=113,rw=true \
 --vhost-user-generic "/tmp/linux-vm3-blk-skt",label=111 \
 --vhost-user-generic "/tmp/linux-vm3-gpu-skt",label=114,queue-num=2 \
---vhost-user-generic "/tmp/linux-vm3-net-skt",label=126 \
---vhost-user-generic "/tmp/linux-vm3-con-skt",label=127 \
+--vhost-user-generic "/tmp/linux-vm3-net-skt",label=137 \
+--vhost-user-generic "/tmp/linux-vm3-con-skt",label=138 \
 --vhost-user-generic "/tmp/linux-vm3-rng-skt",label=129 \
 --vhost-user-generic "/tmp/linux-vm3-vsk-skt",label=12A \
 --vhost-user-generic "/tmp/linux-vm3-gpio-skt",label=12B \
