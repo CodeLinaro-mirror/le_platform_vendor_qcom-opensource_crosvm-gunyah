@@ -43,5 +43,9 @@ ExecStart=/usr/bin/qcrosvm \
 
 ExecStartPost=-/bin/sh -c 'sleep 3; brctl addif br0 vmtap-lvgvm0'
 
+# Back up the previous console log before the next start truncates it
+# Args shown explicitly at their defaults: -n copies, -d backup dir, -s max size.
+ExecStopPost=-/usr/bin/gvm-log-backup.sh /tmp/lv_gvm.txt -n 10 -d /data/logs/lv_gvm -s 10M
+
 [Install]
 WantedBy = single-lv-gvm.target
