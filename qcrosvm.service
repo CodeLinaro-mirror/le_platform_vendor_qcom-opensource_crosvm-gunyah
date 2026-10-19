@@ -22,6 +22,7 @@ ExecStartPre=-/usr/bin/udevadm wait --timeout=5 /dev/input/usb1_touchscreen0
 ExecStart=/usr/bin/qcrosvm \
 --vm=autoghgvm \
 --use-non-protected-virtio \
+--disk=/tmp/la_gvminfo.img,label=20,rw=false \
 --disk=/dev/disk/by-partlabel/la_devinfo,label=21,rw=true \
 --disk=/dev/disk/by-partlabel/la_init_boot_a,label=22,rw=true \
 --disk=/dev/disk/by-partlabel/la_init_boot_b,label=23,rw=true \

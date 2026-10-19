@@ -4,7 +4,7 @@
 [Unit]
 Description=Service to start the Android GVM
 Requires=qcvirtio-blk.service \
-	qcvirtio-gpu-opengl.service \
+	qcvirtio-gpu.service \
 	qcvirtio-snd.service \
 	qcvirtio-net.service \
 	qcvirtio-console.service \
@@ -17,13 +17,14 @@ Requires=qcvirtio-blk.service \
 	qcvirtio-video-decoder.service \
 	qcvirtio-video-encoder.service \
 	qcvirtio-rtc.service \
+	qcvirtio-rng.service \
 	qcvirtio-input.service \
 	qcvirtio-usb.service
 
 Wants=qcvirtio-camera.service
 
 After=qcvirtio-blk.service \
-	qcvirtio-gpu-opengl.service \
+	qcvirtio-gpu.service \
 	qcvirtio-snd.service \
 	qcvirtio-net.service \
 	qcvirtio-console.service \
@@ -37,6 +38,7 @@ After=qcvirtio-blk.service \
 	qcvirtio-video-decoder.service \
 	qcvirtio-video-encoder.service \
 	qcvirtio-rtc.service \
+	qcvirtio-rng.service \
 	qcvirtio-input.service \
 	qcvirtio-usb.service
 
