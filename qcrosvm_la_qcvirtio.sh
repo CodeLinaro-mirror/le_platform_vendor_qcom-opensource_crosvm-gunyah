@@ -20,7 +20,7 @@ ARGS="--vm=autoghgvm \
 --vhost-user-generic "/tmp/linux-vm2-gpu-skt",label=4E,queue-num=2 \
 --vhost-user-generic "/tmp/linux-vm2-snd-skt",label=4F \
 --vhost-user-generic "/tmp/linux-vm2-net-skt",label=52 \
---vhost-user-generic "/tmp/linux-vm2-con-skt",label=53 \
+--vhost-user-generic "/tmp/linux-vm2-con-skt",label=41 \
 --vhost-user-generic "/tmp/linux-vm2-vsk-skt",label=54 \
 --vhost-user-generic "/tmp/linux-vm2-input-skt",label=40 \
 --vhost-user-generic "/tmp/linux-vm2-gpio-skt",label=55 \
@@ -29,6 +29,7 @@ ARGS="--vm=autoghgvm \
 --vhost-user-generic "/tmp/linux-vm2-can-skt",label=58 \
 --vhost-user-generic "/tmp/linux-vm2-i2c-skt",label=59 \
 --vhost-user-generic "/tmp/linux-vm2-rtc-skt",label=5A \
+--vhost-user-generic "/tmp/linux-vm2-rng-skt",label=53 \
 --vhost-user-generic "/tmp/linux-vm2-dec-skt",label=3B \
 --vhost-user-generic "/tmp/linux-vm2-enc-skt",label=3D \
 --vhost-user-generic "/tmp/linux-vm2-usb-skt",label=3C
