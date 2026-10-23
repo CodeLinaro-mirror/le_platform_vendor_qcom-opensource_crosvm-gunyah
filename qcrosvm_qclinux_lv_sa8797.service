@@ -2,10 +2,14 @@
 # SPDX-License-Identifier: BSD-3-Clause-Clear
 [Unit]
 Description=Service to start the Linux GVM with Qclinux
-Requires=vhost-user-scmi-qclinux-lv.service vhost-device-ssr_lv.service vmm_drv.service vhost-user-glinkpassthrough-lv.service vhost-user-frpc_lv.service
-After=vhost-user-scmi-qclinux-lv.service vhost-device-ssr_lv.service vmm_drv.service vhost-user-glinkpassthrough-lv.service vhost-user-frpc_lv.service
+Requires=vhost-user-scmi-qclinux-lv.service vhost-device-ssr_lv.service vmm_drv.service vhost-user-glinkpassthrough-lv.service vhost-user-frpc_lv.service disksymlink.service firmware-vm-boot-autoghgvmlv-mount.service
+After=vhost-user-scmi-qclinux-lv.service vhost-device-ssr_lv.service vmm_drv.service vhost-user-glinkpassthrough-lv.service vhost-user-frpc_lv.service disksymlink.service firmware-vm-boot-autoghgvmlv-mount.service
+Before = shutdown.target
+Conflicts = shutdown.target
+DefaultDependencies = no
 # List of service unit dependencies
 # List of device unit dependencies
+
 [Service]
 Type=simple
 Slice=gvm.slice
