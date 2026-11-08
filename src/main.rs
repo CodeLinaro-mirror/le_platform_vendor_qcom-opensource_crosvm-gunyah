@@ -445,6 +445,7 @@ pub struct VirtioNet {
     ip_addr: Option<net::Ipv4Addr>,
     netmask: Option<net::Ipv4Addr>,
     mac_addr: Option<MacAddress>,
+    vm_mac: Option<MacAddress>,
     tap_name: Option<String>,
     label: u32,
     mmio: Option<MmioDevice>,
@@ -457,6 +458,7 @@ impl VirtioNet {
             ip_addr: None,
             netmask: None,
             mac_addr: None,
+            vm_mac: None,
             tap_name: None,
             label: 0,
             mmio: None,
@@ -507,30 +509,33 @@ impl VirtioNetDevices {
                 }
             }
 
-            if let (Some(ip_addr), Some(netmask), Some(mac_addr)) = (vnet.ip_addr, vnet.netmask, vnet.mac_addr) {
+            if let (Some(ip_addr), Some(netmask), Some(mac_addr))
+                                        = (vnet.ip_addr, vnet.netmask, vnet.mac_addr) {
                 if self.vhost_net {
                     let mut ndev;
                     if vnet.tap_name.is_some() {
                         let vmname_string: &String = &vnet.tap_name.as_ref().unwrap();
                         let str_name = b"vmtap-";
                         let name  = &[str_name,vmname_string.as_bytes()].concat();
-                        ndev = virtio::vhost::Net::<Tap, vhost::Net<Tap>>::new_with_name(
+                        ndev = virtio::vhost::Net::<Tap, vhost::Net<Tap>>::new_with_name_and_mac(
                             &self.vhost_net_device_path,
                             base_features(ProtectionType::Unprotected),
                             ip_addr,
                             netmask,
                             mac_addr,
+                            vnet.vm_mac,
                             name,
                             ).map_err(|_| BackendError::StrError(String::from("new with name failed failed")))?;
                     }
                     else
                     {
-                        ndev = virtio::vhost::Net::<Tap, vhost::Net<Tap>>::new(
+                        ndev = virtio::vhost::Net::<Tap, vhost::Net<Tap>>::new_with_mac(
                             &self.vhost_net_device_path,
                             base_features(ProtectionType::Unprotected),
                             ip_addr,
                             netmask,
                             mac_addr,
+                            vnet.vm_mac,
                             ).map_err(|_| BackendError::StrError(String::from("vhost_net_new failed")))?;
                     }
 
@@ -617,6 +622,19 @@ impl DeviceTrait for VirtioNetDevices {
                 }
                 "mac" => {
                     vnet_dev.mac_addr =
+                        Some(
+                            value
+                            .parse()
+                            .map_err(|_| argument::Error::InvalidValue {
+                                value: value.to_owned(),
+                                expected: String::from(
+                                    "`mac` needs to be in the form \"XX:XX:XX:XX:XX:XX\"",
+                                    ),
+                            })?,
+                            );
+                }
+                "vm_mac" => {
+                    vnet_dev.vm_mac =
                         Some(
                             value
                             .parse()
@@ -3548,7 +3566,7 @@ fn to_cmd(ioc: VmIoctl, version: u8) -> Result<u64, BackendError> {
 fn print_usage() {
     println!("qcrosvm [-l] [-s] [-c | --scmi=true,label=LABEL]
     [-d | --disk=IMAGE_FILE,label=LABEL[,rw=[true|false],sparse=[true|false],block_size=BYTES]]
-    [-n | --net=true,label=LABEL,ip_addr=IP_ADDR,netmask=NETMASK,mac=MAC,tapname=TAP]
+    [-n | --net=true,label=LABEL,ip_addr=IP_ADDR,netmask=NETMASK,mac=MAC,tapname=TAP,vm_mac=MAC]
     [-i | --input=PATH,label=LABEL]
     [--vhost-user-hab SOCKET_PATH,device_id=DEVICE_ID,queue-num=QUEUE_NUM,label=LABEL]
     [--vhost-user-i2c SOCKET_PATH,label=LABEL]
@@ -4030,9 +4048,10 @@ fn parse_and_run(args: std::env::Args) -> Result<(), ()> {
                             Valid keys:
                             label=LABEL - Indicates the label associated with the virtual net dev
                             ip_addr=IP - IP address to assign to host tap interface
-                            netmask=NETMASK - Netmask for VM subnet
-                            mac=MAC - MAC address for VM,
-                            tapName=TAP - Indicates VM name is provided for network configuration"),
+                            netmask=NETMASK - Netmask for tap
+                            mac=MAC - MAC address for tap,
+                            tapName=TAP - Indicates tap name is provided for network configuration,
+                            vm_mac=MAC - MAC address for net dev in Guest VM"),
         Argument::value("vhost-user-hab", "SOCKET_PATH", "label=LABEL[,key=value[,...]],device-id= device id  , queue-num = Number of queues"),
         Argument::short_value('i', "input", "PATH,label=LABEL[,key=value[,key=value[,...]]", "Path to a input device followed by comma-separated option label=LABEL."),
         Argument::value("console", "PATH,label=LABEL", "stdout or Path to a log file followed by comma-separated option label=LABEL"),
